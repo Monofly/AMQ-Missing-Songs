@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "anime_en": "test",
+    "anime_romaji": "test",
+    "year": "",
+    "season": "Winter",
+    "type": "OP",
+    "song_title_romaji": "",
+    "song_title_original": "",
+    "artist_romaji": "",
+    "artist_original": "",
+    "composer_romaji": "",
+    "composer_original": "",
+    "arranger_romaji": "",
+    "arranger_original": "",
+    "episode": "",
+    "time_start": "",
+    "time_end": "",
+    "unidentified": false,
+    "clean_available": true,
+    "ann_url": "",
+    "mal_url": "",
+    "issues": [],
+    "notes": ""
+  }
+]
