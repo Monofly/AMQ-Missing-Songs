@@ -363,8 +363,7 @@
 
     async function init(){
       try {
-        const version = String(Date.now()); // This changes on every reload
-        const res = await fetch(`${CONTENT_PATH}?v=${version}`, { cache: 'no-store' });
+        const res = await fetch(CONTENT_PATH, { cache: 'no-store' });
         let raw = await res.json();
 
         // Defaults and normalization; allow empties for unidentified.
