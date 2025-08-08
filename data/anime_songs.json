@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "anime_en": "Silent Möbius: The Motion Picture 2",
+    "anime_romaji": "Silent Möbius: The Motion Picture 2",
+    "year": 1992,
+    "season": "Summer",
+    "type": "Insert",
+    "song_title_romaji": "Mahou",
+    "song_title_original": "魔法",
+    "artist_romaji": "",
+    "artist_original": "",
+    "composer_romaji": "Kaoru Wada",
+    "composer_original": "和田薫",
+    "arranger_romaji": "Kaoru Wada",
+    "arranger_original": "和田薫",
+    "episode": "1",
+    "time_start": "51:28",
+    "time_end": "53:14",
+    "unidentified": false,
+    "clean_available": true,
+    "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=6074",
+    "mal_url": "https://myanimelist.net/anime/2100",
+    "issues": [
+      "needs_artist"
+    ],
+    "notes": "Couldn't pinpoint artist from either of them:\nKiyoshi Hiyama, Yasuhiro Kido, Ichiro Nitta, Tokyo Philharmonic Chorus"
+  }
+]
