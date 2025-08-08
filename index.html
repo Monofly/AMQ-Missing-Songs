@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Anime song tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0f1115; --card:#131721; --text:#e9eef7; --muted:#a7b0c0; --accent:#5cc8ff; --bad:#ff6b6b; --ok:#4ade80; --warn:#fbbf24; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 24px 16px; border-bottom: 1px solid #1f2430; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .sub { color: var(--muted); font-size: 14px; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .filters { display: grid; grid-template-columns: 1fr repeat(4, minmax(140px, 220px)); gap: 12px; position: sticky; top: 0; background: linear-gradient(to bottom, var(--bg) 70%, transparent); padding: 12px 0; z-index: 10; }
+    input[type="search"], select { width: 100%; padding: 10px 12px; border: 1px solid #263047; border-radius: 8px; background: #0c0f17; color: var(--text); }
+    input::placeholder { color: #72809a; }
+    .count { margin: 8px 0 16px; color: var(--muted); font-size: 13px; }
+    .table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #1f2430; vertical-align: top; }
+    th { position: sticky; top: 76px; background: var(--card); text-align: left; font-weight: 600; color: var(--muted); }
+    tbody tr:hover { background: #111622; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
+    .type { background: #1b2a3f; color: #9fd1ff; }
+    .bad { background: #3a1b1b; color: #ffb4b4; }
+    .ok { background: #163121; color: #b7f0c9; }
+    .warn { background: #3a2c14; color: #ffe2a7; }
+    .muted { color: var(--muted); }
+    .label { color: var(--muted); font-size: 12px; margin-right: 6px; }
+    .link { color: var(--accent); text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+    .two-line { line-height: 1.35; }
+    footer { padding: 40px 16px; color: var(--muted); text-align: center; font-size: 13px; }
+    @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } th { top: 164px; } }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <h1>Anime song tracker</h1>
+    <div class="sub">Find and fix unidentified songs, missing clean versions, and missing ANN/MAL links.</div>
+  </header>
+
+  <main class="wrap">
+    <section class="filters">
+      <input id="q" type="search" placeholder="Search anime, song, or credits…" />
+      <select id="year"></select>
+      <select id="season">
+        <option value="all">All seasons</option>
+        <option>Winter</option><option>Spring</option><option>Summer</option><option>Fall</option>
+      </select>
+      <select id="type">
+        <option value="all">All types</option>
+        <option>OP</option><option>ED</option><option>Insert</option>
+      </select>
+      <select id="status">
+        <option value="all">All statuses</option>
+        <option value="unidentified">Unidentified</option>
+        <option value="missing_clean">Missing clean</option>
+        <option value="missing_ann">Missing ANN</option>
+        <option value="missing_mal">Missing MAL</option>
+        <option value="has_issues">Has other issues</option>
+      </select>
+    </section>
+
+    <div class="count" id="count">Loading…</div>
+
+    <table class="table" aria-describedby="count">
+      <thead>
+        <tr>
+          <th style="width: 28%">Anime</th>
+          <th style="width: 30%">Song</th>
+          <th style="width: 26%">Credits</th>
+          <th style="width: 8%">Type</th>
+          <th style="width: 8%">Links</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <footer>
+    Edit data in <span class="mono">/data/anime_songs.json</span>. Leave fields empty for unidentified entries.
+  </footer>
+
+  <script>
+    const els = {
+      q: document.getElementById('q'),
+      year: document.getElementById('year'),
+      season: document.getElementById('season'),
+      type: document.getElementById('type'),
+      status: document.getElementById('status'),
+      rows: document.getElementById('rows'),
+      count: document.getElementById('count'),
+    };
+
+    let DATA = [];
+
+    function uniqueYears(items){ return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a,b)=>b-a); }
+    function normalize(str){ return (str || '').toString().toLowerCase(); }
+    function isEmpty(s){ return !s || !String(s).trim(); }
+
+    function statusTags(item){
+      const tags = [];
+      if (item.unidentified) tags.push({cls:'bad', text:'Unidentified'});
+      if (item.clean_available === false) tags.push({cls:'warn', text:'Missing clean'});
+      if (!item.ann_url) tags.push({cls:'warn', text:'Missing ANN'});
+      if (!item.mal_url) tags.push({cls:'warn', text:'Missing MAL'});
+      if (Array.isArray(item.issues) && item.issues.length) tags.push({cls:'warn', text:'Other issues'});
+      if (!tags.length) tags.push({cls:'ok', text:'Complete'});
+      return tags;
+    }
+
+    function displayTitle(romaji, original){
+      const r = (romaji||'').trim(); const o = (original||'').trim();
+      if (isEmpty(r) && isEmpty(o)) return '—';
+      if (isEmpty(o) || normalize(o) === normalize(r)) return escapeHtml(r);
+      return `<div class="two-line">
+        <div>${escapeHtml(r)}</div>
+        <div class="muted">${escapeHtml(o)}</div>
+      </div>`;
+    }
+
+    function displayName(label, romaji, original){
+      const content = displayTitle(romaji, original);
+      return `<div><span class="label">${label}:</span> ${content}</div>`;
+    }
+
+    function personBlock(item){
+      return [
+        displayName('Artist', item.artist_romaji, item.artist_original),
+        displayName('Composer', item.composer_romaji, item.composer_original),
+        displayName('Arranger', item.arranger_romaji, item.arranger_original)
+      ].join('');
+    }
+
+    function linkOrDash(href, label){
+      return href ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(href)}">${label}</a>` : '—';
+    }
+
+    function timeRange(start, end){
+      if (isEmpty(start) && isEmpty(end)) return '—';
+      if (isEmpty(end)) return `${escapeHtml(start)}–?`;
+      if (isEmpty(start)) return `?–${escapeHtml(end)}`;
+      return `${escapeHtml(start)}–${escapeHtml(end)}`;
+    }
+
+    function escapeHtml(s){
+      return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    }
+
+    function applyFilters(){
+      const q = normalize(els.q.value);
+      const year = els.year.value;
+      const season = els.season.value;
+      const type = els.type.value;
+      const status = els.status.value;
+
+      const filtered = DATA.filter(it => {
+        if (year !== 'all' && String(it.year) !== year) return false;
+        if (season !== 'all' && it.season !== season) return false;
+        if (type !== 'all' && it.type !== type) return false;
+
+        if (status !== 'all') {
+          if (status === 'unidentified' && !it.unidentified) return false;
+          if (status === 'missing_clean' && it.clean_available !== false) return false;
+          if (status === 'missing_ann' && !!it.ann_url) return false;
+          if (status === 'missing_mal' && !!it.mal_url) return false;
+          if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
+        }
+
+        if (q) {
+          const hay = [
+            it.anime_en, it.anime_romaji,
+            it.song_title_romaji, it.song_title_original,
+            it.artist_romaji, it.artist_original,
+            it.composer_romaji, it.composer_original,
+            it.arranger_romaji, it.arranger_original,
+            it.episode, it.notes,
+            ...(Array.isArray(it.issues) ? it.issues : [])
+          ].map(normalize).join(' ');
+          if (!hay.includes(q)) return false;
+        }
+
+        return true;
+      });
+
+      renderRows(filtered);
+    }
+
+    function renderRows(items){
+      els.count.textContent = `${items.length} result${items.length===1?'':'s'} • ${DATA.length} total`;
+      els.rows.innerHTML = items.map(it => {
+        const tags = statusTags(it).map(t => `<span class="pill ${t.cls}">${t.text}</span>`).join(' ');
+        const issues = (Array.isArray(it.issues) && it.issues.length) ? `<div class="mono">Issues: ${it.issues.map(escapeHtml).join(', ')}</div>` : '';
+        const ep = isEmpty(it.episode) ? '—' : escapeHtml(String(it.episode));
+        const time = timeRange(it.time_start, it.time_end);
+        return `<tr>
+          <td>
+            ${displayTitle(it.anime_en, it.anime_romaji)}
+            <div class="mono">${it.season || '—'} ${it.year || '—'} • Ep ${ep} • ${time}</div>
+          </td>
+          <td>
+            ${displayTitle(it.song_title_romaji, it.song_title_original)}
+            <div class="mono">${tags}</div>
+          </td>
+          <td>${personBlock(it)}${it.notes ? `<div class="mono">Notes: ${escapeHtml(it.notes)}</div>` : ''}${issues}</td>
+          <td><span class="pill type">${escapeHtml(it.type || '—')}</span></td>
+          <td>${linkOrDash(it.ann_url, 'ANN')} · ${linkOrDash(it.mal_url, 'MAL')}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function populateYearOptions(items){
+      const years = uniqueYears(items);
+      document.getElementById('year').innerHTML =
+        `<option value="all">All years</option>` +
+        years.map(y => `<option value="${y}">${y}</option>`).join('');
+    }
+
+    async function init(){
+      try {
+        const res = await fetch('data/anime_songs.json', {cache:'no-store'});
+        DATA = await res.json();
+
+        // Defaults and gentle normalization; allow empties for unidentified.
+        DATA = DATA.map(x => ({
+          anime_en: '', anime_romaji: '',
+          year: '', season: 'Winter',
+          type: 'OP',
+          song_title_romaji: '', song_title_original: '',
+          artist_romaji: '', artist_original: '',
+          composer_romaji: '', composer_original: '',
+          arranger_romaji: '', arranger_original: '',
+          episode: '', time_start: '', time_end: '',
+          unidentified: false,
+          clean_available: true,
+          ann_url: '', mal_url: '',
+          issues: [], // array of freeform strings, e.g., ["bad_mix", "needs_verification"]
+          notes: '',
+          ...x
+        }));
+
+        populateYearOptions(DATA);
+
+        [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
+
+        applyFilters();
+      } catch (e){
+        els.count.textContent = 'Could not load data/anime_songs.json';
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
