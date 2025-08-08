@@ -561,37 +561,43 @@
       const type = els.type.value;
       const status = els.status.value;
 
-      const filtered = DATA.filter(it => {
-        if (year !== 'all' && String(it.year) !== year) return false;
-        if (season !== 'all' && it.season !== season) return false;
-        if (type !== 'all' && it.type !== type) return false;
+      const filtered = DATA
+        .filter(it => {
+          if (year !== 'all' && String(it.year) !== year) return false;
+          if (season !== 'all' && it.season !== season) return false;
+          if (type !== 'all' && it.type !== type) return false;
 
-        if (status !== 'all') {
-          if (status === 'unidentified' && !it.unidentified) return false;
-          if (status === 'missing_clean' && it.clean_available !== false) return false;
-          if (status === 'missing_artist' &&
-            !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) {
-            return false;
+          if (status !== 'all') {
+            if (status === 'unidentified' && !it.unidentified) return false;
+            if (status === 'missing_clean' && it.clean_available !== false) return false;
+            if (status === 'missing_artist' &&
+              !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) {
+              return false;
+            }
+            if (status === 'missing_ann' && !!it.ann_url) return false;
+            if (status === 'missing_mal' && !!it.mal_url) return false;
+            if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
           }
-          if (status === 'missing_ann' && !!it.ann_url) return false;
-          if (status === 'missing_mal' && !!it.mal_url) return false;
-          if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
-        }
 
-        if (q) {
-          const hay = [
-            it.anime_en, it.anime_romaji,
-            it.song_title_romaji, it.song_title_original,
-            it.artist_romaji, it.artist_original,
-            it.composer_romaji, it.composer_original,
-            it.arranger_romaji, it.arranger_original,
-            it.episode, it.notes,
-            ...(Array.isArray(it.issues) ? it.issues : [])
-          ].map(normalize).join(' ');
-          if (!hay.includes(q)) return false;
-        }
-        return true;
-      });
+          if (q) {
+            const hay = [
+              it.anime_en, it.anime_romaji,
+              it.song_title_romaji, it.song_title_original,
+              it.artist_romaji, it.artist_original,
+              it.composer_romaji, it.composer_original,
+              it.arranger_romaji, it.arranger_original,
+              it.episode, it.notes,
+              ...(Array.isArray(it.issues) ? it.issues : [])
+            ].map(normalize).join(' ');
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => {
+          const tA = (a.anime_en.trim() || a.anime_romaji.trim()).toLowerCase();
+          const tB = (b.anime_en.trim() || b.anime_romaji.trim()).toLowerCase();
+          return tA.localeCompare(tB);
+        });
 
       renderRows(filtered);
     }
@@ -682,6 +688,13 @@
           ...x,
           _index: i // stable index within current array
         }));
+
+        DATA.sort((a, b) => {
+          // pick English title or fallback to Romaji
+          const tA = (a.anime_en.trim() || a.anime_romaji.trim()).toLowerCase();
+          const tB = (b.anime_en.trim() || b.anime_romaji.trim()).toLowerCase();
+          return tA.localeCompare(tB);
+        });
 
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
