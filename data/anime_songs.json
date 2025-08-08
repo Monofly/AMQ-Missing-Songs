@@ -22,5 +22,29 @@
     "mal_url": "https://myanimelist.net/anime/2100",
     "issues": [],
     "notes": "Couldn't pinpoint artist from either of them:\nKiyoshi Hiyama, Yasuhiro Kido, Ichiro Nitta, Tokyo Philharmonic Chorus"
+  },
+  {
+    "anime_en": "",
+    "anime_romaji": "Iya na Kao Sare Nagara Opantsu Misete Moraitai Ver.3.0 (Kari)",
+    "year": 2023,
+    "season": "Winter",
+    "type": "ED",
+    "song_title_romaji": "Hashitteku",
+    "song_title_original": "走ってく",
+    "artist_romaji": "Mofuru × Cross",
+    "artist_original": "もふる×クロス",
+    "composer_romaji": "Shinya Nishimura",
+    "composer_original": "西村晋弥",
+    "arranger_romaji": "SNOWKEL",
+    "arranger_original": "SNOWKEL",
+    "episode": "1",
+    "time_start": "4:54",
+    "time_end": "6:26",
+    "unidentified": false,
+    "clean_available": true,
+    "ann_url": "",
+    "mal_url": "https://myanimelist.net/anime/55629/Iya_na_Kao_sare_nagara_Opantsu_Misete_Moraitai_ver_30",
+    "issues": [],
+    "notes": "Timestamp for Kuwahara Yuki ver. Not the same for all versions. Members of the artist group are: Ichinose Koharu, Rokuhoshi Ellie, Kafuu Sayaka, Takanashi Ruu"
   }
 ]
