@@ -791,7 +791,7 @@
     }
 
     function restoreSession() {
-      const t = sessionStorage.getItem('gh_token');
+      const t = localStorage.getItem('gh_token');
       if (!t) return;
       token = t;
       verifyAdmin().then(ok => {
@@ -854,7 +854,7 @@
           return;
         }
         token = tokenResp.access_token;
-        sessionStorage.setItem('gh_token', token);
+        localStorage.setItem('gh_token', token);
         const ok = await verifyAdmin();
         isAdmin = ok;
         updateAdminVisibility();
