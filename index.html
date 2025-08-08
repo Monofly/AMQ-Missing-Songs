@@ -333,6 +333,7 @@
         <option value="all">All statuses</option>
         <option value="unidentified">Unidentified</option>
         <option value="missing_clean">Missing clean</option>
+        <option value="missing_artist">Missing artist</option>
         <option value="missing_ann">Missing ANN</option>
         <option value="missing_mal">Missing MAL</option>
         <option value="has_issues">Has other issues</option>
@@ -508,6 +509,12 @@
       if (item.clean_available === false) tags.push({ cls: 'warn', text: 'Missing clean' });
       if (!item.ann_url) tags.push({ cls: 'warn', text: 'Missing ANN' });
       if (!item.mal_url) tags.push({ cls: 'warn', text: 'Missing MAL' });
+
+      // New: flag missing artist explicitly
+      if (isEmpty(item.artist_romaji) && isEmpty(item.artist_original)) {
+        tags.push({ cls: 'warn', text: 'Missing artist' });
+      }
+
       if (Array.isArray(item.issues) && item.issues.length) tags.push({ cls: 'warn', text: 'Other issues' });
       if (!tags.length) tags.push({ cls: 'ok', text: 'Complete' });
       return tags;
@@ -562,6 +569,10 @@
         if (status !== 'all') {
           if (status === 'unidentified' && !it.unidentified) return false;
           if (status === 'missing_clean' && it.clean_available !== false) return false;
+          if (status === 'missing_artist' &&
+            !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) {
+            return false;
+          }
           if (status === 'missing_ann' && !!it.ann_url) return false;
           if (status === 'missing_mal' && !!it.mal_url) return false;
           if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
