@@ -20,9 +20,7 @@
     "clean_available": true,
     "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=6074",
     "mal_url": "https://myanimelist.net/anime/2100",
-    "issues": [
-      "needs_artist"
-    ],
+    "issues": [],
     "notes": "Couldn't pinpoint artist from either of them:\nKiyoshi Hiyama, Yasuhiro Kido, Ichiro Nitta, Tokyo Philharmonic Chorus"
   }
 ]
