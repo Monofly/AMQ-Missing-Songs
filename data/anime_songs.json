@@ -70,5 +70,29 @@
     "mal_url": "https://myanimelist.net/anime/60506",
     "issues": [],
     "notes": "Editable since the instrumental is released."
+  },
+  {
+    "anime_en": "",
+    "anime_romaji": "Araiguma Calcal-dan",
+    "year": 2025,
+    "season": "Spring",
+    "type": "Insert",
+    "song_title_romaji": "Kazari Janai no yo Namida wa",
+    "song_title_original": "飾りじゃないのよ涙は",
+    "artist_romaji": "Akina Nakamori",
+    "artist_original": "",
+    "composer_romaji": "Yousui Inoue",
+    "composer_original": "井上陽水",
+    "arranger_romaji": "",
+    "arranger_original": "",
+    "episode": "18",
+    "time_start": "00:00",
+    "time_end": "00:55",
+    "unidentified": false,
+    "clean_available": false,
+    "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=34151",
+    "mal_url": "https://myanimelist.net/anime/60506",
+    "issues": [],
+    "notes": "Song is cut out at 00:21-00:41"
   }
 ]
