@@ -361,10 +361,23 @@
         years.map(y => `<option value="${y}">${y}</option>`).join('');
     }
 
-    async function init(){
-      try {
-        const res = await fetch(CONTENT_PATH, { cache: 'no-store' });
-        let raw = await res.json();
+      async function init() {
+        try {
+          // 1. Build the GitHub API URL for the raw file
+          const apiUrl =
+            `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}`
+            + `/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${CONFIG.BRANCH}`;
+
+          // 2. Prepare headers: request raw content, and include auth if we have a token
+          const headers = {
+            'Accept': 'application/vnd.github.v3.raw',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          };
+
+          // 3. Fetch the latest file straight from GitHub (bypassing Pages delay)
+          const res = await fetch(apiUrl, { headers, cache: 'no-store' });
+          if (!res.ok) throw new Error(`GitHub API ${res.statusText}`);
+          const raw = await res.json();    // GitHub returns the file contents as valid JSON
 
         // Defaults and normalization; allow empties for unidentified.
         DATA = (raw || []).map((x, i) => ({
@@ -397,18 +410,19 @@
 
     // ===== Admin UI and GitHub API =====
 
-    function wireAdminBar(){
-      els.loginBtn.addEventListener('click', loginWithGitHub);
-      els.logoutBtn.addEventListener('click', () => {
-        sessionStorage.removeItem('gh_token');
-        token = null;
-        currentUser = null;
-        isAdmin = false;
-        updateAdminVisibility();
-        applyFilters();
-      });
-      els.addBtn.addEventListener('click', () => openEditor(null));
-    }
+    function wireAdminBar() {
+        els.loginBtn.addEventListener('click', loginWithGitHub);
+        els.logoutBtn.addEventListener('click', () => {
+          sessionStorage.removeItem('gh_token');
+          localStorage.removeItem('gh_token');
+          token = null;
+          currentUser = null;
+          isAdmin = false;
+          updateAdminVisibility();
+          applyFilters();
+        });
+        els.addBtn.addEventListener('click', () => openEditor(null));
+      }
 
     function updateAdminVisibility(){
       if (token && isAdmin) {
@@ -429,21 +443,23 @@
       }
     }
 
-    function restoreSession(){
-      const t = sessionStorage.getItem('gh_token');
-      if (!t) return;
-      token = t;
-      verifyAdmin().then(ok => {
+  function restoreSession() {
+    const t = localStorage.getItem('gh_token') || sessionStorage.getItem('gh_token');
+    if (!t) return;
+    token = t;
+    verifyAdmin()
+      .then(ok => {
         isAdmin = ok;
         updateAdminVisibility();
-      }).catch(() => {
-        // invalid token
+      })
+      .catch(() => {
         sessionStorage.removeItem('gh_token');
+        localStorage.removeItem('gh_token');
         token = null;
         isAdmin = false;
         updateAdminVisibility();
       });
-    }
+  }
 
     async function loginWithGitHub(){
       // Device Flow: Step 1 - request device/user code
@@ -494,6 +510,7 @@
         }
         token = tokenResp.access_token;
         sessionStorage.setItem('gh_token', token);
+        localStorage.setItem('gh_token', token);
         const ok = await verifyAdmin();
         isAdmin = ok;
         updateAdminVisibility();
