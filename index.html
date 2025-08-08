@@ -1,311 +1,59 @@
 <!doctype html>
 <html lang="en">
-
 <head>
   <meta charset="utf-8" />
   <title>Anime song tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root {
-      --bg: #0f1115;
-      --card: #131721;
-      --text: #e9eef7;
-      --muted: #a7b0c0;
-      --accent: #5cc8ff;
-      --bad: #ff6b6b;
-      --ok: #4ade80;
-      --warn: #fbbf24;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    header {
-      padding: 24px 16px;
-      border-bottom: 1px solid #1f2430;
-    }
-
-    h1 {
-      margin: 0 0 8px;
-      font-size: 22px;
-    }
-
-    .sub {
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .wrap {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 16px;
-    }
-
-    .filters {
-      display: grid;
-      grid-template-columns: 1fr repeat(4, minmax(140px, 220px));
-      gap: 12px;
-      position: sticky;
-      top: 0;
-      background: linear-gradient(to bottom, var(--bg) 70%, transparent);
-      padding: 12px 0;
-      z-index: 10;
-    }
-
-    input[type="search"],
-    select {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid #263047;
-      border-radius: 8px;
-      background: #0c0f17;
-      color: var(--text);
-    }
-
-    input::placeholder {
-      color: #72809a;
-    }
-
-    .count {
-      margin: 8px 0 16px;
-      color: var(--muted);
-      font-size: 13px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    th,
-    td {
-      padding: 10px 12px;
-      border-bottom: 1px solid #1f2430;
-      vertical-align: top;
-    }
-
-    th {
-      position: sticky;
-      top: 76px;
-      background: var(--card);
-      text-align: left;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
-    tbody tr:hover {
-      background: #111622;
-    }
-
-    .pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      margin-right: 6px;
-    }
-
-    .type {
-      background: #1b2a3f;
-      color: #9fd1ff;
-    }
-
-    .bad {
-      background: #3a1b1b;
-      color: #ffb4b4;
-    }
-
-    .ok {
-      background: #163121;
-      color: #b7f0c9;
-    }
-
-    .warn {
-      background: #3a2c14;
-      color: #ffe2a7;
-    }
-
-    .muted {
-      color: var(--muted);
-    }
-
-    .label {
-      color: var(--muted);
-      font-size: 12px;
-      margin-right: 6px;
-    }
-
-    .link {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    .link:hover {
-      text-decoration: underline;
-    }
-
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .two-line {
-      line-height: 1.35;
-    }
-
-    footer {
-      padding: 40px 16px;
-      color: var(--muted);
-      text-align: center;
-      font-size: 13px;
-    }
-
-    .admin {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .btn {
-      background: #1b2335;
-      color: var(--text);
-      border: 1px solid #2b3550;
-      padding: 8px 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 13px;
-    }
-
-    .btn:hover {
-      background: #1f2940;
-    }
-
-    .btn.danger {
-      background: #3a1b1b;
-      border-color: #612b2b;
-    }
-
-    .btn.secondary {
-      background: #0c0f17;
-      border-color: #263047;
-    }
-
-    .row-actions {
-      margin-top: 6px;
-      display: none;
-      gap: 6px;
-    }
-
-    .admin-on .row-actions {
-      display: inline-flex;
-    }
-
-    .notice {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
+    :root { --bg:#0f1115; --card:#131721; --text:#e9eef7; --muted:#a7b0c0; --accent:#5cc8ff; --bad:#ff6b6b; --ok:#4ade80; --warn:#fbbf24; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 24px 16px; border-bottom: 1px solid #1f2430; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .sub { color: var(--muted); font-size: 14px; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    .filters { display: grid; grid-template-columns: 1fr repeat(4, minmax(140px, 220px)); gap: 12px; position: sticky; top: 0; background: linear-gradient(to bottom, var(--bg) 70%, transparent); padding: 12px 0; z-index: 10; }
+    input[type="search"], select { width: 100%; padding: 10px 12px; border: 1px solid #263047; border-radius: 8px; background: #0c0f17; color: var(--text); }
+    input::placeholder { color: #72809a; }
+    .count { margin: 8px 0 16px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #1f2430; vertical-align: top; }
+    th { position: sticky; top: 76px; background: var(--card); text-align: left; font-weight: 600; color: var(--muted); }
+    tbody tr:hover { background: #111622; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
+    .type { background: #1b2a3f; color: #9fd1ff; }
+    .bad { background: #3a1b1b; color: #ffb4b4; }
+    .ok { background: #163121; color: #b7f0c9; }
+    .warn { background: #3a2c14; color: #ffe2a7; }
+    .muted { color: var(--muted); }
+    .label { color: var(--muted); font-size: 12px; margin-right: 6px; }
+    .link { color: var(--accent); text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+    .two-line { line-height: 1.35; }
+    footer { padding: 40px 16px; color: var(--muted); text-align: center; font-size: 13px; }
+    .admin { display: flex; gap: 8px; align-items: center; }
+    .btn { background: #1b2335; color: var(--text); border: 1px solid #2b3550; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+    .btn:hover { background: #1f2940; }
+    .btn.danger { background: #3a1b1b; border-color: #612b2b; }
+    .btn.secondary { background: #0c0f17; border-color: #263047; }
+    .row-actions { margin-top: 6px; display: none; gap: 6px; }
+    .admin-on .row-actions { display: inline-flex; }
+    .notice { color: var(--muted); font-size: 12px; }
     /* Modal */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.6);
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-
-    .modal {
-      width: min(800px, 96vw);
-      background: #0f1422;
-      border: 1px solid #263047;
-      border-radius: 10px;
-      padding: 16px;
-      max-height: 90vh;
-      overflow: auto;
-    }
-
-    .modal h3 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
-    .grid-3 {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .field label {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .field input,
-    .field select,
-    .field textarea {
-      background: #0c0f17;
-      color: var(--text);
-      border: 1px solid #263047;
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
-    }
-
-    .field textarea {
-      min-height: 80px;
-    }
-
-    .modal-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 12px;
-    }
-
-    @media (max-width: 900px) {
-      .filters {
-        grid-template-columns: 1fr 1fr;
-      }
-
-      th {
-        top: 164px;
-      }
-
-      .grid,
-      .grid-3 {
-        grid-template-columns: 1fr;
-      }
-    }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { width: min(800px, 96vw); background: #0f1422; border: 1px solid #263047; border-radius: 10px; padding: 16px; max-height: 90vh; overflow: auto; }
+    .modal h3 { margin: 0 0 12px; font-size: 18px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 12px; color: var(--muted); }
+    .field input, .field select, .field textarea { background: #0c0f17; color: var(--text); border: 1px solid #263047; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+    .field textarea { min-height: 80px; }
+    .modal-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+    @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } th { top: 164px; } .grid, .grid-3 { grid-template-columns: 1fr; } }
   </style>
 </head>
-
 <body>
   <header class="wrap">
     <h1>Anime song tracker</h1>
@@ -318,16 +66,11 @@
       <select id="year"></select>
       <select id="season">
         <option value="all">All seasons</option>
-        <option>Winter</option>
-        <option>Spring</option>
-        <option>Summer</option>
-        <option>Fall</option>
+        <option>Winter</option><option>Spring</option><option>Summer</option><option>Fall</option>
       </select>
       <select id="type">
         <option value="all">All types</option>
-        <option>OP</option>
-        <option>ED</option>
-        <option>Insert</option>
+        <option>OP</option><option>ED</option><option>Insert</option>
       </select>
       <select id="status">
         <option value="all">All statuses</option>
@@ -376,24 +119,16 @@
         <div class="grid">
           <div class="field"><label>Anime (English)</label><input name="anime_en" /></div>
           <div class="field"><label>Anime (Romaji)</label><input name="anime_romaji" /></div>
-          <div class="field"><label>Year (4 digits)</label><input name="year" inputmode="numeric"
-              placeholder="e.g., 2024" /></div>
+          <div class="field"><label>Year (4 digits)</label><input name="year" inputmode="numeric" placeholder="e.g., 2024" /></div>
           <div class="field">
             <label>Season</label>
             <select name="season">
-              <option>Winter</option>
-              <option>Spring</option>
-              <option>Summer</option>
-              <option>Fall</option>
+              <option>Winter</option><option>Spring</option><option>Summer</option><option>Fall</option>
             </select>
           </div>
           <div class="field">
             <label>Type</label>
-            <select name="type">
-              <option>OP</option>
-              <option>ED</option>
-              <option>Insert</option>
-            </select>
+            <select name="type"><option>OP</option><option>ED</option><option>Insert</option></select>
           </div>
           <div class="field"><label>Episode (e.g., 3 or 3-4)</label><input name="episode" /></div>
           <div class="field"><label>Start time (e.g., 00:12 or 00:12:05)</label><input name="time_start" /></div>
@@ -423,27 +158,19 @@
         <div class="grid">
           <div class="field">
             <label>Unidentified?</label>
-            <select name="unidentified">
-              <option value="false">false</option>
-              <option value="true">true</option>
-            </select>
+            <select name="unidentified"><option value="false">false</option><option value="true">true</option></select>
           </div>
           <div class="field">
             <label>Clean available?</label>
-            <select name="clean_available">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
+            <select name="clean_available"><option value="true">true</option><option value="false">false</option></select>
           </div>
           <div class="field"><label>ANN URL</label><input name="ann_url" placeholder="https://..." /></div>
           <div class="field"><label>MAL URL</label><input name="mal_url" placeholder="https://..." /></div>
         </div>
 
         <div class="grid">
-          <div class="field"><label>Issues (comma-separated tags)</label><input name="issues"
-              placeholder="needs_id, needs_romaji" /></div>
-          <div class="field"><label>Notes</label><textarea name="notes" placeholder="Context, scene, etc."></textarea>
-          </div>
+          <div class="field"><label>Issues (comma-separated tags)</label><input name="issues" placeholder="needs_id, needs_romaji" /></div>
+          <div class="field"><label>Notes</label><textarea name="notes" placeholder="Context, scene, etc."></textarea></div>
         </div>
 
         <div class="modal-actions">
@@ -496,31 +223,24 @@
     let currentUser = null;    // {login, ...}
     const CONTENT_PATH = 'data/anime_songs.json';
 
-    // Always pull the latest JSON from the repo (bypasses GitHub Pages lag)
-    const RAW_JSON_URL = `https://raw.githubusercontent.com/${CONFIG.OWNER}/${CONFIG.REPO}/${CONFIG.BRANCH}/${CONTENT_PATH}`;
+    function uniqueYears(items){ return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a,b)=>b-a); }
+    function normalize(str){ return (str || '').toString().toLowerCase(); }
+    function isEmpty(s){ return !s || !String(s).trim(); }
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])); }
 
-    // Local safety copy keys
-    const LS_JSON = 'ast_last_json';
-    const LS_UPDATED_AT = 'ast_last_updated_at';
-
-    function uniqueYears(items) { return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a, b) => b - a); }
-    function normalize(str) { return (str || '').toString().toLowerCase(); }
-    function isEmpty(s) { return !s || !String(s).trim(); }
-    function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c])); }
-
-    function statusTags(item) {
+    function statusTags(item){
       const tags = [];
-      if (item.unidentified) tags.push({ cls: 'bad', text: 'Unidentified' });
-      if (item.clean_available === false) tags.push({ cls: 'warn', text: 'Missing clean' });
-      if (!item.ann_url) tags.push({ cls: 'warn', text: 'Missing ANN' });
-      if (!item.mal_url) tags.push({ cls: 'warn', text: 'Missing MAL' });
-      if (Array.isArray(item.issues) && item.issues.length) tags.push({ cls: 'warn', text: 'Other issues' });
-      if (!tags.length) tags.push({ cls: 'ok', text: 'Complete' });
+      if (item.unidentified) tags.push({cls:'bad', text:'Unidentified'});
+      if (item.clean_available === false) tags.push({cls:'warn', text:'Missing clean'});
+      if (!item.ann_url) tags.push({cls:'warn', text:'Missing ANN'});
+      if (!item.mal_url) tags.push({cls:'warn', text:'Missing MAL'});
+      if (Array.isArray(item.issues) && item.issues.length) tags.push({cls:'warn', text:'Other issues'});
+      if (!tags.length) tags.push({cls:'ok', text:'Complete'});
       return tags;
     }
 
-    function displayTitle(romaji, original) {
-      const r = (romaji || '').trim(); const o = (original || '').trim();
+    function displayTitle(romaji, original){
+      const r = (romaji||'').trim(); const o = (original||'').trim();
       if (isEmpty(r) && isEmpty(o)) return '—';
       if (isEmpty(o) || normalize(o) === normalize(r)) return escapeHtml(r);
       return `<div class="two-line">
@@ -529,12 +249,12 @@
       </div>`;
     }
 
-    function displayName(label, romaji, original) {
+    function displayName(label, romaji, original){
       const content = displayTitle(romaji, original);
       return `<div><span class="label">${label}:</span> ${content}</div>`;
     }
 
-    function personBlock(item) {
+    function personBlock(item){
       return [
         displayName('Artist', item.artist_romaji, item.artist_original),
         displayName('Composer', item.composer_romaji, item.composer_original),
@@ -542,18 +262,18 @@
       ].join('');
     }
 
-    function linkOrDash(href, label) {
+    function linkOrDash(href, label){
       return href ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(href)}">${label}</a>` : '—';
     }
 
-    function timeRange(start, end) {
+    function timeRange(start, end){
       if (isEmpty(start) && isEmpty(end)) return '—';
       if (isEmpty(end)) return `${escapeHtml(start)}–?`;
       if (isEmpty(start)) return `?–${escapeHtml(end)}`;
       return `${escapeHtml(start)}–${escapeHtml(end)}`;
     }
 
-    function applyFilters() {
+    function applyFilters(){
       const q = normalize(els.q.value);
       const year = els.year.value;
       const season = els.season.value;
@@ -591,10 +311,10 @@
       renderRows(filtered);
     }
 
-    function renderRows(items) {
+    function renderRows(items){
       const adminClass = isAdmin ? 'admin-on' : '';
       document.body.classList.toggle('admin-on', isAdmin);
-      els.count.textContent = `${items.length} result${items.length === 1 ? '' : 's'} • ${DATA.length} total`;
+      els.count.textContent = `${items.length} result${items.length===1?'':'s'} • ${DATA.length} total`;
       els.rows.innerHTML = items.map(it => {
         const tags = statusTags(it).map(t => `<span class="pill ${t.cls}">${t.text}</span>`).join(' ');
         const issues = (Array.isArray(it.issues) && it.issues.length) ? `<div class="mono">Issues: ${it.issues.map(escapeHtml).join(', ')}</div>` : '';
@@ -634,98 +354,17 @@
       }
     }
 
-    function populateYearOptions(items) {
+    function populateYearOptions(items){
       const years = uniqueYears(items);
       document.getElementById('year').innerHTML =
         `<option value="all">All years</option>` +
         years.map(y => `<option value="${y}">${y}</option>`).join('');
     }
 
-    function saveLocalCopy(jsonText) {
+    async function init(){
       try {
-        localStorage.setItem(LS_JSON, jsonText);
-        localStorage.setItem(LS_UPDATED_AT, new Date().toISOString());
-      } catch { }
-    }
-
-    function getLocalCopy() {
-      try {
-        const text = localStorage.getItem(LS_JSON);
-        if (!text) return null;
-        return JSON.parse(text);
-      } catch {
-        return null;
-      }
-    }
-
-    async function init() {
-      try {
-        // 1) Provisional render from local safety copy (if present) to avoid flicker
-        const localFirst = getLocalCopy();
-        if (localFirst) {
-          DATA = (localFirst || []).map((x, i) => ({
-            anime_en: '', anime_romaji: '',
-            year: '', season: 'Winter',
-            type: 'OP',
-            song_title_romaji: '', song_title_original: '',
-            artist_romaji: '', artist_original: '',
-            composer_romaji: '', composer_original: '',
-            arranger_romaji: '', arranger_original: '',
-            episode: '', time_start: '', time_end: '',
-            unidentified: false,
-            clean_available: true,
-            ann_url: '', mal_url: '',
-            issues: [],
-            notes: '',
-            ...x,
-            _index: i
-          }));
-          populateYearOptions(DATA);
-          applyFilters();
-        }
-
-        // 2) Always fetch the latest from the repo HEAD (bypasses GH Pages lag)
-        let raw;
-        try {
-          const res = await fetch(`${RAW_JSON_URL}?t=${Date.now()}`, { cache: 'no-store' });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          raw = await res.json();
-          // Save a safety copy for next load
-          saveLocalCopy(JSON.stringify(raw, null, 2));
-        } catch (e) {
-          // Fallback to Pages (rare: raw.github unavailable)
-          try {
-            const res2 = await fetch(`${CONTENT_PATH}?t=${Date.now()}`, { cache: 'no-store' });
-            raw = await res2.json();
-          } catch {
-            // If everything fails and we had no local copy, show an error
-            if (!localFirst) els.count.textContent = 'Could not load data/anime_songs.json';
-            raw = null;
-          }
-        }
-
-        if (raw) {
-          DATA = (raw || []).map((x, i) => ({
-            anime_en: '', anime_romaji: '',
-            year: '', season: 'Winter',
-            type: 'OP',
-            song_title_romaji: '', song_title_original: '',
-            artist_romaji: '', artist_original: '',
-            composer_romaji: '', composer_original: '',
-            arranger_romaji: '', arranger_original: '',
-            episode: '', time_start: '', time_end: '',
-            unidentified: false,
-            clean_available: true,
-            ann_url: '', mal_url: '',
-            issues: [],
-            notes: '',
-            ...x,
-            _index: i
-          }));
-          populateYearOptions(DATA);
-          applyFilters();
-        }
-
+        const res = await fetch(CONTENT_PATH, { cache: 'no-store' });
+        let raw = await res.json();
 
         // Defaults and normalization; allow empties for unidentified.
         DATA = (raw || []).map((x, i) => ({
@@ -751,14 +390,14 @@
         wireAdminBar();
         restoreSession();
         applyFilters();
-      } catch (e) {
+      } catch (e){
         els.count.textContent = 'Could not load data/anime_songs.json';
       }
     }
 
     // ===== Admin UI and GitHub API =====
 
-    function wireAdminBar() {
+    function wireAdminBar(){
       els.loginBtn.addEventListener('click', loginWithGitHub);
       els.logoutBtn.addEventListener('click', () => {
         sessionStorage.removeItem('gh_token');
@@ -771,7 +410,7 @@
       els.addBtn.addEventListener('click', () => openEditor(null));
     }
 
-    function updateAdminVisibility() {
+    function updateAdminVisibility(){
       if (token && isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser?.login}`;
         els.loginBtn.style.display = 'none';
@@ -790,8 +429,8 @@
       }
     }
 
-    function restoreSession() {
-      const t = localStorage.getItem('gh_token');
+    function restoreSession(){
+      const t = sessionStorage.getItem('gh_token');
       if (!t) return;
       token = t;
       verifyAdmin().then(ok => {
@@ -806,11 +445,11 @@
       });
     }
 
-    async function loginWithGitHub() {
+    async function loginWithGitHub(){
       // Device Flow: Step 1 - request device/user code
       const deviceCodeResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/device/code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: {'Content-Type':'application/json', 'Accept':'application/json'},
         body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, scope: 'repo' })
       }).then(r => r.json());
 
@@ -834,7 +473,7 @@
         await new Promise(r => setTimeout(r, pollInterval));
         const tokenResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/access_token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: {'Content-Type':'application/json', 'Accept':'application/json'},
           body: JSON.stringify({
             client_id: CONFIG.CLIENT_ID,
             device_code,
@@ -854,7 +493,7 @@
           return;
         }
         token = tokenResp.access_token;
-        localStorage.setItem('gh_token', token);
+        sessionStorage.setItem('gh_token', token);
         const ok = await verifyAdmin();
         isAdmin = ok;
         updateAdminVisibility();
@@ -865,7 +504,7 @@
       alert('GitHub login timed out. Please try again.');
     }
 
-    async function verifyAdmin() {
+    async function verifyAdmin(){
       if (!token) return false;
       // Get user login
       currentUser = await gh('/user');
@@ -877,19 +516,19 @@
       return canPush || isOwnerLogin;
     }
 
-    async function gh(path, options = {}) {
+    async function gh(path, options = {}){
       const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
       const res = await fetch(url, {
         method: options.method || 'GET',
         headers: {
           'Accept': 'application/vnd.github+json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(token ? {'Authorization': `Bearer ${token}`} : {}),
           ...(options.headers || {})
         },
         body: options.body ? JSON.stringify(options.body) : undefined
       });
       if (!res.ok) {
-        const txt = await res.text().catch(() => '');
+        const txt = await res.text().catch(()=> '');
         throw new Error(`GitHub API ${res.status}: ${txt}`);
       }
       return res.json();
@@ -900,21 +539,21 @@
       return btoa(unescape(encodeURIComponent(str)));
     }
 
-    async function loadContentFromGitHub() {
+    async function loadContentFromGitHub(){
       // Get latest file and sha (do this before committing to avoid conflicts)
       const out = await gh(`/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${CONFIG.BRANCH}`);
       // out.content is base64; out.sha is file sha
       return out;
     }
 
-    async function commitJson(newArray, commitMessage) {
+    async function commitJson(newArray, commitMessage){
       els.saveNotice.style.display = '';
       els.saveNotice.textContent = 'Saving…';
       try {
         // Ensure stable indices
-        newArray = newArray.map((x, i) => ({ ...x, _index: i }));
+        newArray = newArray.map((x, i) => ({...x, _index: i}));
 
-        const payload = JSON.stringify(newArray.map(({ _index, ...rest }) => rest), null, 2) + '\n';
+        const payload = JSON.stringify(newArray.map(({_index, ...rest}) => rest), null, 2) + '\n';
         const { sha } = await loadContentFromGitHub();
 
         const update = await gh(`/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${encodeURIComponent(CONTENT_PATH)}`, {
@@ -928,8 +567,7 @@
         });
 
         // Update local state
-        DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
-        saveLocalCopy(payload); // keep a local safety copy
+        DATA = JSON.parse(payload).map((x, i) => ({...x, _index: i}));
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { els.saveNotice.style.display = 'none'; }, 2000);
         populateYearOptions(DATA);
@@ -941,7 +579,7 @@
 
     // ===== Editor modal =====
 
-    function openEditor(index) {
+    function openEditor(index){
       els.modalNotice.textContent = '';
       els.editForm.reset();
       const isNew = (index === null || index === undefined);
@@ -965,12 +603,12 @@
       els.modalBackdrop.setAttribute('aria-hidden', 'false');
     }
 
-    function closeEditor() {
+    function closeEditor(){
       els.modalBackdrop.style.display = 'none';
       els.modalBackdrop.setAttribute('aria-hidden', 'true');
     }
 
-    function fillForm(it) {
+    function fillForm(it){
       const f = els.editForm;
       f.elements.anime_en.value = it.anime_en || '';
       f.elements.anime_romaji.value = it.anime_romaji || '';
@@ -1005,7 +643,7 @@
       f.elements._index.value = (it._index ?? '');
     }
 
-    function readForm() {
+    function readForm(){
       const f = els.editForm;
       // Coerce types where appropriate
       const yearRaw = f.elements.year.value.trim();
@@ -1062,12 +700,12 @@
         return;
       }
 
-      let newArray = DATA.map(x => ({ ...x }));
+      let newArray = DATA.map(x => ({...x}));
       if (index === null) {
         // add
         newArray.push(out);
       } else {
-        newArray[index] = { ...newArray[index], ...out };
+        newArray[index] = {...newArray[index], ...out};
       }
 
       const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
@@ -1075,7 +713,7 @@
       closeEditor();
     });
 
-    async function confirmDelete(index) {
+    async function confirmDelete(index){
       if (!isAdmin || !token) return alert('You are not authorized to delete.');
       const it = DATA[index];
       const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
@@ -1089,5 +727,4 @@
     init();
   </script>
 </body>
-
 </html>
