@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "anime_en": "test",
+    "anime_romaji": "test",
+    "year": 2024,
+    "season": "Winter",
+    "type": "OP",
+    "song_title_romaji": "",
+    "song_title_original": "",
+    "artist_romaji": "",
+    "artist_original": "",
+    "composer_romaji": "",
+    "composer_original": "",
+    "arranger_romaji": "",
+    "arranger_original": "",
+    "episode": "3",
+    "time_start": "00:12",
+    "time_end": "00:16",
+    "unidentified": true,
+    "clean_available": false,
+    "ann_url": "",
+    "mal_url": "",
+    "issues": [],
+    "notes": ""
+  }
+]
