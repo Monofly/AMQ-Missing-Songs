@@ -5,8 +5,7 @@
   <meta charset="utf-8" />
   <title>Missing Songs for AMQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="alternate icon" href="/favicon.png" type="image/png">
+  <link rel="icon" href="/favicon.png" type="image/png">
   <style>
     :root {
       --bg: #0f1115;
@@ -655,9 +654,13 @@
         const ep = isEmpty(it.episode) ? '—' : escapeHtml(String(it.episode));
         const time = timeRange(it.time_start, it.time_end);
         const idx = it._index; // stable index we attach during normalization
-        const rowActions = isAdmin ? `
+        const rowActionsAnime = isAdmin ? `
           <div class="row-actions">
             <button class="btn" data-add-from="${idx}">Add Entry From This Show</button>
+          </div>` : '';
+
+        const rowActionsSong = isAdmin ? `
+          <div class="row-actions">
             <button class="btn secondary" data-edit="${idx}">Edit</button>
             <button class="btn danger" data-delete="${idx}">Delete</button>
           </div>` : '';
@@ -666,11 +669,12 @@
           <td>
             ${displayTitle(it.anime_en, it.anime_romaji)}
             <div class="mono">${it.season || '—'} ${it.year || '—'} • Ep ${ep} • ${time}</div>
+            ${rowActionsAnime}
           </td>
           <td>
             ${displayTitle(it.song_title_romaji, it.song_title_original)}
             <div class="mono">${tags}</div>
-            ${rowActions}
+            ${rowActionsSong}
           </td>
           <td>${personBlock(it)}${it.notes ? `<div class="mono">Notes: ${escapeHtml(it.notes)}</div>` : ''}${issues}</td>
           <td><span class="pill type">${escapeHtml(it.type || '—')}</span></td>
@@ -960,6 +964,7 @@
 
         // 5) Refresh local DATA and UI
         DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
+        DATA.sort(compareItems);
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { els.saveNotice.style.display = 'none'; }, 2000);
         populateYearOptions(DATA);
@@ -979,56 +984,56 @@
 
     // ===== Editor modal =====
 
-  function buildPresetFromShow(it) {
-    return {
-      anime_en: it.anime_en || '',
-      anime_romaji: it.anime_romaji || '',
-      year: it.year || '',
-      season: it.season || 'Winter',
-      type: 'OP', // default; can be changed in the form
-      song_title_romaji: '',
-      song_title_original: '',
-      artist_romaji: '',
-      artist_original: '',
-      composer_romaji: '',
-      composer_original: '',
-      arranger_romaji: '',
-      arranger_original: '',
-      episode: '',
-      time_start: '',
-      time_end: '',
-      unidentified: false,
-      clean_available: true,
-      ann_url: it.ann_url || '',
-      mal_url: it.mal_url || '',
-      issues: [],
-      notes: ''
-    };
-  }
-
-  function openEditor(index, preset) {
-    els.modalNotice.textContent = '';
-    els.editForm.reset();
-    const isNew = (index === null || index === undefined);
-    els.modalTitle.textContent = isNew ? 'Add entry' : 'Edit entry';
-
-    if (!isNew) {
-      const it = DATA[index];
-      fillForm(it);
-    } else {
-      const baseDefaults = {
-        season: 'Winter',
-        type: 'OP',
+    function buildPresetFromShow(it) {
+      return {
+        anime_en: it.anime_en || '',
+        anime_romaji: it.anime_romaji || '',
+        year: it.year || '',
+        season: it.season || 'Winter',
+        type: 'OP', // default; can be changed in the form
+        song_title_romaji: '',
+        song_title_original: '',
+        artist_romaji: '',
+        artist_original: '',
+        composer_romaji: '',
+        composer_original: '',
+        arranger_romaji: '',
+        arranger_original: '',
+        episode: '',
+        time_start: '',
+        time_end: '',
         unidentified: false,
         clean_available: true,
-        issues: []
+        ann_url: it.ann_url || '',
+        mal_url: it.mal_url || '',
+        issues: [],
+        notes: ''
       };
-      fillForm({ ...baseDefaults, ...(preset || {}) });
     }
 
-    els.modalBackdrop.style.display = 'flex';
-    els.modalBackdrop.setAttribute('aria-hidden', 'false');
-  }
+    function openEditor(index, preset) {
+      els.modalNotice.textContent = '';
+      els.editForm.reset();
+      const isNew = (index === null || index === undefined);
+      els.modalTitle.textContent = isNew ? 'Add entry' : 'Edit entry';
+
+      if (!isNew) {
+        const it = DATA[index];
+        fillForm(it);
+      } else {
+        const baseDefaults = {
+          season: 'Winter',
+          type: 'OP',
+          unidentified: false,
+          clean_available: true,
+          issues: []
+        };
+        fillForm({ ...baseDefaults, ...(preset || {}) });
+      }
+
+      els.modalBackdrop.style.display = 'flex';
+      els.modalBackdrop.setAttribute('aria-hidden', 'false');
+    }
 
     function closeEditor() {
       els.modalBackdrop.style.display = 'none';
