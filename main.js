@@ -127,10 +127,6 @@ function personBlock(item) {
     ].join('');
 }
 
-function linkOrDash(href, label) {
-    return href ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${escapeHtml(href)}">${label}</a>` : '—';
-}
-
 function timeRange(start, end) {
     if (isEmpty(start) && isEmpty(end)) return '—';
     if (isEmpty(end)) return `${escapeHtml(start)}–?`;
@@ -339,7 +335,7 @@ async function ensureCsrf() {
 function safeHref(href, allowedHosts = []) {
     try {
         const u = new URL(href);
-        const okScheme = u.protocol === 'https:' || u.protocol === 'http:';
+        const okScheme = u.protocol === 'https:';
         const okHost = allowedHosts.length ? allowedHosts.includes(u.host) : true;
         return okScheme && okHost ? u.href : null;
     } catch { return null; }
