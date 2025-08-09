@@ -5,6 +5,15 @@
   <meta charset="utf-8" />
   <title>Missing Songs for AMQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy"
+  content="
+    default-src 'self';
+    connect-src https://skibidi-toilet-727.blufir123.workers.dev;
+    img-src 'self';
+    style-src 'self' 'unsafe-inline';
+    script-src 'self';
+    frame-ancestors 'none';
+  ">
   <link rel="icon" href="/favicon.png" type="image/png">
   <style>
     :root {
@@ -781,10 +790,32 @@
         els.logoutBtn.style.display = 'none';
         els.addBtn.style.display = 'none';
       }
-    }
+        }
 
-    async function restoreSession() {
-      // Ask worker who we are (uses cookie)
+        function getCsrf() {
+          const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
+          return m ? decodeURIComponent(m[1]) : '';
+        }
+
+        function safeHref(href, allowedHosts = []) {
+          try {
+            const u = new URL(href);
+            const okScheme = u.protocol === 'https:' || u.protocol === 'http:';
+            const okHost = allowedHosts.length ? allowedHosts.includes(u.host) : true;
+            return okScheme && okHost ? u.href : null;
+          } catch { return null; }
+        }
+
+        function linkOrDash(href, label) {
+          const safe = safeHref(href, [
+            'www.animenewsnetwork.com',
+            'myanimelist.net'
+          ]);
+          return safe ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${safe}">${label}</a>` : '—';
+        }
+
+        async function restoreSession() {
+        // Ask worker who we are (uses cookie)
       try {
         const res = await fetch(`${WORKER_URL}/auth/me`, {
           headers: { 'Accept': 'application/json' },
@@ -812,7 +843,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, scope: 'repo' })
+        body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, scope: 'public_repo' })
       }).then(r => r.json()).catch(() => null);
 
       if (!start || !start.device_code) {
@@ -884,7 +915,11 @@
 
         const res = await fetch(`${WORKER_URL}/commit`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-Token': getCsrf()
+          },
           credentials: 'include',
           body: JSON.stringify({ content: payloadArray, message: commitMessage })
         });
