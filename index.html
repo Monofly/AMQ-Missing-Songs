@@ -743,6 +743,7 @@
         }));
 
         DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
@@ -965,6 +966,7 @@
         // 5) Refresh local DATA and UI
         DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
         DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { els.saveNotice.style.display = 'none'; }, 2000);
         populateYearOptions(DATA);
