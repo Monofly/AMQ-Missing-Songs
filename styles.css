@@ -1,0 +1,297 @@
+:root {
+    --bg: #0f1115;
+    --card: #131721;
+    --text: #e9eef7;
+    --muted: #a7b0c0;
+    --accent: #5cc8ff;
+    --bad: #ff6b6b;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+header {
+    padding: 24px 16px;
+    border-bottom: 1px solid #1f2430;
+}
+
+h1 {
+    margin: 0 0 8px;
+    font-size: 22px;
+}
+
+.sub {
+    color: var(--muted);
+    font-size: 14px;
+}
+
+.wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+.filters {
+    display: grid;
+    grid-template-columns: 1fr repeat(4, minmax(140px, 220px));
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+    padding: 12px 0;
+    z-index: 10;
+}
+
+input[type="search"],
+select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #263047;
+    border-radius: 8px;
+    background: #0c0f17;
+    color: var(--text);
+}
+
+input::placeholder {
+    color: #72809a;
+}
+
+.count {
+    margin: 8px 0 16px;
+    color: var(--muted);
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #1f2430;
+    vertical-align: top;
+}
+
+th {
+    position: sticky;
+    top: 76px;
+    background: var(--card);
+    text-align: left;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+tbody tr:hover {
+    background: #111622;
+}
+
+.pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    margin-right: 6px;
+}
+
+.type {
+    background: #1b2a3f;
+    color: #9fd1ff;
+}
+
+.bad {
+    background: #3a1b1b;
+    color: #ffb4b4;
+}
+
+.ok {
+    background: #163121;
+    color: #b7f0c9;
+}
+
+.warn {
+    background: #3a2c14;
+    color: #ffe2a7;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.label {
+    color: var(--muted);
+    font-size: 12px;
+    margin-right: 6px;
+}
+
+.link {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.link:hover {
+    text-decoration: underline;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.two-line {
+    line-height: 1.35;
+}
+
+footer {
+    padding: 40px 16px;
+    color: var(--muted);
+    text-align: center;
+    font-size: 13px;
+}
+
+.admin {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn {
+    background: #1b2335;
+    color: var(--text);
+    border: 1px solid #2b3550;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.btn:hover {
+    background: #1f2940;
+}
+
+.btn.danger {
+    background: #3a1b1b;
+    border-color: #612b2b;
+}
+
+.btn.secondary {
+    background: #0c0f17;
+    border-color: #263047;
+}
+
+.row-actions {
+    margin-top: 6px;
+    display: none;
+    gap: 6px;
+}
+
+.admin-on .row-actions {
+    display: inline-flex;
+}
+
+.notice {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+/* Modal */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    width: min(800px, 96vw);
+    background: #0f1422;
+    border: 1px solid #263047;
+    border-radius: 10px;
+    padding: 16px;
+    max-height: 90vh;
+    overflow: auto;
+}
+
+.modal h3 {
+    margin: 0 0 12px;
+    font-size: 18px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.field label {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.field input,
+.field select,
+.field textarea {
+    background: #0c0f17;
+    color: var(--text);
+    border: 1px solid #263047;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+}
+
+.field textarea {
+    min-height: 80px;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+    .filters {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    th {
+        top: 164px;
+    }
+
+    .grid,
+    .grid-3 {
+        grid-template-columns: 1fr;
+    }
+}
