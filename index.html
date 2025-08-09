@@ -463,14 +463,16 @@
   </div>
 
   <script>
-    // ==== CONFIG: set these to your repo and OAuth app ====
+    // ==== CONFIG ====
     const CONFIG = {
-      OWNER: 'Monofly',   // e.g., 'floth'
-      REPO: 'monofly.github.io',          // e.g., 'anime-song-tracker'
-      BRANCH: 'main',                  // e.g., 'main' or 'gh-pages'
-      CLIENT_ID: 'Ov23ctADgidCYeXxj8mv' // from GitHub OAuth App (device flow)
+      OWNER: 'Monofly',
+      REPO: 'monofly.github.io',
+      BRANCH: 'main',
+      CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
     };
-    // =======================================================
+    // Cloudflare Worker base URL
+    const WORKER_URL = 'https://skibidi-toilet-727.blufir123.workers.dev';
+    // ===============
 
     const els = {
       q: document.getElementById('q'),
@@ -495,10 +497,8 @@
     };
 
     let DATA = [];
-    let isAdmin = false;       // toggles admin controls visibility
-    let token = null;          // GitHub OAuth access token for this session
-    let currentUser = null;    // {login, ...}
-    let currentFileSha = null;
+    let isAdmin = false;
+    let currentUser = null;
     const CONTENT_PATH = 'data/anime_songs.json';
 
     function uniqueYears(items) { return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a, b) => b - a); }
@@ -707,23 +707,15 @@
 
     async function init() {
       try {
-        // 1. Build the GitHub API URL for the raw file
-        const apiUrl =
-          `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}`
-          + `/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${CONFIG.BRANCH}`;
+        const res = await fetch(`${WORKER_URL}/content`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include', // include cookies (not strictly required for GET /content)
+          cache: 'no-store'
+        });
+        if (!res.ok) throw new Error(`Load error ${res.status}`);
+        const raw = await res.json();
 
-        // 2. Prepare headers: request raw content, and include auth if we have a token
-        const headers = {
-          'Accept': 'application/vnd.github.v3.raw',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        };
-
-        // 3. Fetch the latest file straight from GitHub (bypassing Pages delay)
-        const res = await fetch(apiUrl, { headers, cache: 'no-store' });
-        if (!res.ok) throw new Error(`GitHub API ${res.statusText}`);
-        const raw = await res.json();    // GitHub returns the file contents as valid JSON
-
-        // Defaults and normalization; allow empties for unidentified.
         DATA = (raw || []).map((x, i) => ({
           anime_en: '', anime_romaji: '',
           year: '', season: 'Winter',
@@ -739,7 +731,7 @@
           issues: [],
           notes: '',
           ...x,
-          _index: i // stable index within current array
+          _index: i
         }));
 
         DATA.sort(compareItems);
@@ -748,7 +740,7 @@
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
         wireAdminBar();
-        restoreSession();
+        await restoreSession();
         applyFilters();
       } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
@@ -759,10 +751,11 @@
 
     function wireAdminBar() {
       els.loginBtn.addEventListener('click', loginWithGitHub);
-      els.logoutBtn.addEventListener('click', () => {
-        sessionStorage.removeItem('gh_token');
-        localStorage.removeItem('gh_token');
-        token = null;
+      els.logoutBtn.addEventListener('click', async () => {
+        await fetch(`${WORKER_URL}/logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
         currentUser = null;
         isAdmin = false;
         updateAdminVisibility();
@@ -772,13 +765,13 @@
     }
 
     function updateAdminVisibility() {
-      if (token && isAdmin) {
-        els.loginStatus.textContent = `Signed in as ${currentUser?.login}`;
+      if (currentUser && isAdmin) {
+        els.loginStatus.textContent = `Signed in as ${currentUser.login}`;
         els.loginBtn.style.display = 'none';
         els.logoutBtn.style.display = '';
         els.addBtn.style.display = '';
-      } else if (token && !isAdmin) {
-        els.loginStatus.textContent = `Signed in as ${currentUser?.login} (no write access)`;
+      } else if (currentUser && !isAdmin) {
+        els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
         els.loginBtn.style.display = 'none';
         els.logoutBtn.style.display = '';
         els.addBtn.style.display = 'none';
@@ -790,114 +783,89 @@
       }
     }
 
-    function restoreSession() {
-      const t = localStorage.getItem('gh_token') || sessionStorage.getItem('gh_token');
-      if (!t) return;
-      token = t;
-      verifyAdmin()
-        .then(ok => {
-          isAdmin = ok;
-          updateAdminVisibility();
-          applyFilters();    // ← re-render rows so admin controls appear
-        })
-        .catch(() => {
-          sessionStorage.removeItem('gh_token');
-          localStorage.removeItem('gh_token');
-          token = null;
-          isAdmin = false;
-          updateAdminVisibility();
-          applyFilters();    // ← ensure rows re-render without admin controls
+    async function restoreSession() {
+      // Ask worker who we are (uses cookie)
+      try {
+        const res = await fetch(`${WORKER_URL}/auth/me`, {
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include'
         });
+        if (!res.ok) throw new Error('auth/me failed');
+        const info = await res.json();
+        if (info.loggedIn) {
+          currentUser = info.user;
+          isAdmin = !!info.canPush;
+        } else {
+          currentUser = null;
+          isAdmin = false;
+        }
+      } catch {
+        currentUser = null;
+        isAdmin = false;
+      }
+      updateAdminVisibility();
     }
 
     async function loginWithGitHub() {
-      // Device Flow: Step 1 - request device/user code
-      const deviceCodeResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/device/code', {
+      // 1) Start device flow via Worker
+      const start = await fetch(`${WORKER_URL}/oauth/device-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, scope: 'repo' })
-      }).then(r => r.json());
+      }).then(r => r.json()).catch(() => null);
 
-      if (!deviceCodeResp || !deviceCodeResp.device_code) {
+      if (!start || !start.device_code) {
         alert('GitHub login failed to start.');
         return;
       }
 
-      const { device_code, user_code, verification_uri, expires_in, interval } = deviceCodeResp;
+      const { device_code, user_code, verification_uri, expires_in, interval } = start;
 
-      // Show instructions
       const msg = `1) Visit: ${verification_uri}\n2) Enter code: ${user_code}\n\nKeep this tab open; we’ll finish automatically.`;
-      if (confirm(msg + '\n\nClick OK when you’ve entered the code. We’ll then complete login.')) {
-        // poll for token
+      if (!confirm(msg + '\n\nClick OK after you’ve entered the code.')) {
+        return;
       }
 
-      const startedAt = Date.now();
-      const pollInterval = Math.max((interval || 5), 3) * 1000;
+      // 2) Poll via Worker (cookie will be set server-side when ready)
+      const began = Date.now();
+      const pollMs = Math.max((interval || 5), 3) * 1000;
 
-      while (Date.now() - startedAt < (expires_in * 1000)) {
-        await new Promise(r => setTimeout(r, pollInterval));
-        const tokenResp = await fetch('https://skibidi-toilet-727.blufir123.workers.dev/access_token', {
+      while (Date.now() - began < (expires_in * 1000)) {
+        await new Promise(r => setTimeout(r, pollMs));
+        const resp = await fetch(`${WORKER_URL}/oauth/poll`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({
-            client_id: CONFIG.CLIENT_ID,
-            device_code,
-            grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-          })
-        }).then(r => r.json());
+          credentials: 'include',
+          body: JSON.stringify({ client_id: CONFIG.CLIENT_ID, device_code })
+        }).then(r => r.json()).catch(() => ({}));
 
-        if (tokenResp.error === 'authorization_pending') {
-          continue;
-        }
-        if (tokenResp.error === 'slow_down') {
+        if (resp.status === 'pending') continue;
+        if (resp.status === 'slow_down') {
           await new Promise(r => setTimeout(r, 5000));
           continue;
         }
-        if (tokenResp.error) {
-          alert('GitHub login error: ' + tokenResp.error);
+        if (resp.error) {
+          alert('GitHub login error: ' + resp.error);
           return;
         }
-        token = tokenResp.access_token;
-        sessionStorage.setItem('gh_token', token);
-        localStorage.setItem('gh_token', token);
-        const ok = await verifyAdmin();
-        isAdmin = ok;
-        updateAdminVisibility();
-        applyFilters();
-        if (!ok) alert('Signed in but you do not have write access to this repo.');
-        return;
+        if (resp.ok) {
+          // Cookie is set; we also got user info back
+          currentUser = resp.user;
+          // Double-check push permission
+          await restoreSession();
+          if (!isAdmin) alert('Signed in but you do not have write access to this repo.');
+          applyFilters();
+          return;
+        }
       }
+
       alert('GitHub login timed out. Please try again.');
     }
 
     async function verifyAdmin() {
-      if (!token) return false;
-      // Get user login
-      currentUser = await gh('/user');
-      if (!currentUser?.login) return false;
-      // Quick check: must be OWNER or have push permission
-      const repo = await gh(`/repos/${CONFIG.OWNER}/${CONFIG.REPO}`);
-      const canPush = !!(repo?.permissions?.push);
-      const isOwnerLogin = currentUser.login.toLowerCase() === CONFIG.OWNER.toLowerCase();
-      return canPush || isOwnerLogin;
-    }
-
-    async function gh(path, options = {}) {
-      const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
-      const res = await fetch(url, {
-        method: options.method || 'GET',
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          ...(options.headers || {})
-        },
-        body: options.body ? JSON.stringify(options.body) : undefined
-      });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        throw new Error(`GitHub API ${res.status}: ${txt}`);
-      }
-      return res.json();
+      await restoreSession();
+      return isAdmin;
     }
 
     function b64EncodeUnicode(str) {
@@ -905,79 +873,39 @@
       return btoa(unescape(encodeURIComponent(str)));
     }
 
-    async function loadContentFromGitHub() {
-      const url =
-        `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}`
-        + `/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${CONFIG.BRANCH}`;
-
-      const res = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/vnd.github+json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        cache: 'no-store'       // ← bypass any caching
-      });
-
-      if (!res.ok) {
-        throw new Error(`Load failed: ${res.statusText}`);
-      }
-
-      return res.json();       // returns { content, sha, ... }
-    }
-
     async function commitJson(newArray, commitMessage) {
-      // Disable Save button to prevent double-submits
       els.saveBtn.disabled = true;
       els.saveNotice.style.display = '';
       els.saveNotice.textContent = 'Saving…';
 
       try {
-        // 1) Build the JSON payload
-        const payload = JSON.stringify(
-          newArray.map(({ _index, ...rest }) => rest),
-          null,
-          2
-        ) + '\n';
+        // Strip UI-only fields
+        const payloadArray = newArray.map(({ _index, ...rest }) => rest);
 
-        // 2) Ensure we have the up-to-date SHA
-        if (!currentFileSha) {
-          const meta = await loadContentFromGitHub();
-          currentFileSha = meta.sha;
+        const res = await fetch(`${WORKER_URL}/commit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ content: payloadArray, message: commitMessage })
+        });
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(`Save failed: ${res.status} ${txt}`);
         }
 
-        // 3) Push the update to GitHub
-        const update = await gh(
-          `/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${CONTENT_PATH}`,
-          {
-            method: 'PUT',
-            body: {
-              message: commitMessage,
-              content: b64EncodeUnicode(payload),
-              sha: currentFileSha,
-              branch: CONFIG.BRANCH
-            }
-          }
-        );
-
-        // 4) Cache the new SHA for any further commits
-        currentFileSha = update.content.sha;
-
-        // 5) Refresh local DATA and UI
+        // Update local DATA and UI from our payload (sorted and re-indexed)
+        const payload = JSON.stringify(payloadArray, null, 2) + '\n';
         DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { els.saveNotice.style.display = 'none'; }, 2000);
         populateYearOptions(DATA);
         applyFilters();
 
       } catch (e) {
-        // On conflict, clear SHA and retry once
-        if (e.message.includes('409')) {
-          currentFileSha = null;
-          return commitJson(newArray, commitMessage);
-        }
         els.saveNotice.textContent = 'Save failed. ' + e.message;
       } finally {
         els.saveBtn.disabled = false;
@@ -1122,7 +1050,7 @@
 
     els.editForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!isAdmin || !token) {
+      if (!isAdmin) {
         els.modalNotice.textContent = 'You are not authorized to save.';
         return;
       }
@@ -1148,7 +1076,7 @@
     });
 
     async function confirmDelete(index) {
-      if (!isAdmin || !token) return alert('You are not authorized to delete.');
+      if (!isAdmin) return alert('You are not authorized to delete.');
       const it = DATA[index];
       const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
       if (!confirm(`Delete this entry?\n\nAnime: ${it?.anime_en || it?.anime_romaji || '(unknown)'}\nSong: ${title}`)) return;
