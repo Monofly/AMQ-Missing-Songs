@@ -34,6 +34,7 @@ const els = {
 let DATA = [];
 let isAdmin = false;
 let currentUser = null;
+let CSRF = '';
 const CONTENT_PATH = 'data/anime_songs.json';
 
 function uniqueYears(items) { return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a, b) => b - a); }
@@ -276,6 +277,7 @@ async function init() {
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
         wireAdminBar();
         await restoreSession();
+        await ensureCsrf();
         applyFilters();
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
@@ -318,9 +320,20 @@ function updateAdminVisibility() {
     }
 }
 
-function getCsrf() {
-    const m = document.cookie.match(/(?:^|;\s*)csrf=([^;]+)/);
-    return m ? decodeURIComponent(m[1]) : '';
+async function ensureCsrf() {
+    if (CSRF) return CSRF;
+    try {
+        const r = await fetch(`${WORKER_URL}/csrf`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { 'Accept': 'application/json' }
+        });
+        if (r.ok) {
+            const j = await r.json();
+            CSRF = j.csrf || '';
+        }
+    } catch { }
+    return CSRF;
 }
 
 function safeHref(href, allowedHosts = []) {
@@ -409,6 +422,7 @@ async function loginWithGitHub() {
         if (resp.ok) {
             // Cookie is set; we also got user info back
             currentUser = resp.user;
+            if (resp.csrf) CSRF = resp.csrf;
             // Double-check push permission
             await restoreSession();
             if (!isAdmin) alert('Signed in but you do not have write access to this repo.');
@@ -436,6 +450,7 @@ async function commitJson(newArray, commitMessage) {
     els.saveNotice.textContent = 'Saving…';
 
     try {
+        await ensureCsrf();
         // Strip UI-only fields
         const payloadArray = newArray.map(({ _index, ...rest }) => rest);
 
@@ -444,7 +459,7 @@ async function commitJson(newArray, commitMessage) {
             headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
-                'X-CSRF-Token': getCsrf()
+                'X-CSRF-Token': CSRF
             },
             credentials: 'include',
             body: JSON.stringify({ content: payloadArray, message: commitMessage })
