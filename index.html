@@ -5,6 +5,8 @@
   <meta charset="utf-8" />
   <title>Missing Songs for AMQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.png" type="image/png">
   <style>
     :root {
       --bg: #0f1115;
@@ -309,7 +311,8 @@
 <body>
   <header class="wrap">
     <h1>Missing Songs for AMQ</h1>
-    <div class="sub">Find potentially legal songs for AMQ even if they have issues or not. Added songs to AMQ will be removed.</div>
+    <div class="sub">Find potentially legal songs for AMQ even if they have issues or not. Added songs to AMQ will be
+      removed.</div>
   </header>
 
   <main class="wrap">
@@ -331,6 +334,7 @@
       </select>
       <select id="status">
         <option value="all">All statuses</option>
+        <option value="complete">Complete</option>
         <option value="unidentified">Unidentified</option>
         <option value="missing_clean">Missing clean</option>
         <option value="missing_artist">Missing artist</option>
@@ -503,6 +507,49 @@
     function isEmpty(s) { return !s || !String(s).trim(); }
     function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c])); }
 
+    function parseEpisodeStart(ep) {
+      if (isEmpty(ep)) return Number.POSITIVE_INFINITY;
+      const m = String(ep).match(/^(\d+)/);
+      return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+    }
+
+    function parseTimeToSeconds(t) {
+      if (!t || !String(t).trim()) return Number.POSITIVE_INFINITY;
+      const parts = String(t).split(':').map(Number);
+      if (parts.some(n => Number.isNaN(n))) return Number.POSITIVE_INFINITY;
+      if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (parts.length === 2) return parts[0] * 60 + parts[1];
+      if (parts.length === 1) return parts[0];
+      return Number.POSITIVE_INFINITY;
+    }
+
+    // Consistent “complete” definition used by filters and tags
+    function isComplete(it) {
+      const hasArtist = !isEmpty(it.artist_romaji) || !isEmpty(it.artist_original);
+      const hasAnn = !!it.ann_url;
+      const hasMal = !!it.mal_url;
+      const hasIssues = Array.isArray(it.issues) && it.issues.length > 0;
+      const cleanOK = it.clean_available !== false;
+      const unidentified = !!it.unidentified;
+      return hasArtist && hasAnn && hasMal && cleanOK && !hasIssues && !unidentified;
+    }
+
+    // Multi-key comparator: anime title -> episode -> start time
+    function compareItems(a, b) {
+      const aTitle = (a.anime_en?.trim() || a.anime_romaji?.trim() || '').toLowerCase();
+      const bTitle = (b.anime_en?.trim() || b.anime_romaji?.trim() || '').toLowerCase();
+      const byTitle = aTitle.localeCompare(bTitle);
+      if (byTitle !== 0) return byTitle;
+
+      const aEp = parseEpisodeStart(a.episode);
+      const bEp = parseEpisodeStart(b.episode);
+      if (aEp !== bEp) return aEp - bEp;
+
+      const aStart = parseTimeToSeconds(a.time_start);
+      const bStart = parseTimeToSeconds(b.time_start);
+      return aStart - bStart;
+    }
+
     function statusTags(item) {
       const tags = [];
       if (item.unidentified) tags.push({ cls: 'bad', text: 'Unidentified' });
@@ -510,24 +557,26 @@
       if (!item.ann_url) tags.push({ cls: 'warn', text: 'Missing ANN' });
       if (!item.mal_url) tags.push({ cls: 'warn', text: 'Missing MAL' });
 
-      // New: flag missing artist explicitly
       if (isEmpty(item.artist_romaji) && isEmpty(item.artist_original)) {
         tags.push({ cls: 'warn', text: 'Missing artist' });
       }
 
       if (Array.isArray(item.issues) && item.issues.length) tags.push({ cls: 'warn', text: 'Other issues' });
-      if (!tags.length) tags.push({ cls: 'ok', text: 'Complete' });
+      if (isComplete(item) && !tags.length) tags.push({ cls: 'ok', text: 'Complete' });
       return tags;
     }
 
-    function displayTitle(romaji, original) {
-      const r = (romaji || '').trim(); const o = (original || '').trim();
-      if (isEmpty(r) && isEmpty(o)) return '—';
-      if (isEmpty(o) || normalize(o) === normalize(r)) return escapeHtml(r);
+    function displayTitle(primary, secondary) {
+      const a = (primary || '').trim();
+      const b = (secondary || '').trim();
+      if (isEmpty(a) && isEmpty(b)) return '—';
+      if (isEmpty(b)) return escapeHtml(a);      // only primary present
+      if (isEmpty(a)) return escapeHtml(b);      // only secondary present -> show as primary
+      if (normalize(a) === normalize(b)) return escapeHtml(a);
       return `<div class="two-line">
-        <div>${escapeHtml(r)}</div>
-        <div class="muted">${escapeHtml(o)}</div>
-      </div>`;
+    <div>${escapeHtml(a)}</div>
+    <div class="muted">${escapeHtml(b)}</div>
+  </div>`;
     }
 
     function displayName(label, romaji, original) {
@@ -570,13 +619,11 @@
           if (status !== 'all') {
             if (status === 'unidentified' && !it.unidentified) return false;
             if (status === 'missing_clean' && it.clean_available !== false) return false;
-            if (status === 'missing_artist' &&
-              !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) {
-              return false;
-            }
+            if (status === 'missing_artist' && !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) return false;
             if (status === 'missing_ann' && !!it.ann_url) return false;
             if (status === 'missing_mal' && !!it.mal_url) return false;
             if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
+            if (status === 'complete' && !isComplete(it)) return false;  // NEW
           }
 
           if (q) {
@@ -593,11 +640,7 @@
           }
           return true;
         })
-        .sort((a, b) => {
-          const tA = (a.anime_en.trim() || a.anime_romaji.trim()).toLowerCase();
-          const tB = (b.anime_en.trim() || b.anime_romaji.trim()).toLowerCase();
-          return tA.localeCompare(tB);
-        });
+        .sort(compareItems);
 
       renderRows(filtered);
     }
@@ -614,6 +657,7 @@
         const idx = it._index; // stable index we attach during normalization
         const rowActions = isAdmin ? `
           <div class="row-actions">
+            <button class="btn" data-add-from="${idx}">Add Entry From This Show</button>
             <button class="btn secondary" data-edit="${idx}">Edit</button>
             <button class="btn danger" data-delete="${idx}">Delete</button>
           </div>` : '';
@@ -635,12 +679,17 @@
       }).join('');
 
       if (isAdmin) {
-        // Wire Edit/Delete buttons
         els.rows.querySelectorAll('[data-edit]').forEach(btn => {
           btn.addEventListener('click', () => openEditor(Number(btn.getAttribute('data-edit'))));
         });
         els.rows.querySelectorAll('[data-delete]').forEach(btn => {
           btn.addEventListener('click', () => confirmDelete(Number(btn.getAttribute('data-delete'))));
+        });
+        els.rows.querySelectorAll('[data-add-from]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const i = Number(btn.getAttribute('data-add-from'));
+            openEditor(null, buildPresetFromShow(DATA[i]));
+          });
         });
       }
     }
@@ -689,12 +738,7 @@
           _index: i // stable index within current array
         }));
 
-        DATA.sort((a, b) => {
-          // pick English title or fallback to Romaji
-          const tA = (a.anime_en.trim() || a.anime_romaji.trim()).toLowerCase();
-          const tB = (b.anime_en.trim() || b.anime_romaji.trim()).toLowerCase();
-          return tA.localeCompare(tB);
-        });
+        DATA.sort(compareItems);
 
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
@@ -935,29 +979,56 @@
 
     // ===== Editor modal =====
 
-    function openEditor(index) {
-      els.modalNotice.textContent = '';
-      els.editForm.reset();
-      const isNew = (index === null || index === undefined);
-      els.modalTitle.textContent = isNew ? 'Add entry' : 'Edit entry';
+  function buildPresetFromShow(it) {
+    return {
+      anime_en: it.anime_en || '',
+      anime_romaji: it.anime_romaji || '',
+      year: it.year || '',
+      season: it.season || 'Winter',
+      type: 'OP', // default; can be changed in the form
+      song_title_romaji: '',
+      song_title_original: '',
+      artist_romaji: '',
+      artist_original: '',
+      composer_romaji: '',
+      composer_original: '',
+      arranger_romaji: '',
+      arranger_original: '',
+      episode: '',
+      time_start: '',
+      time_end: '',
+      unidentified: false,
+      clean_available: true,
+      ann_url: it.ann_url || '',
+      mal_url: it.mal_url || '',
+      issues: [],
+      notes: ''
+    };
+  }
 
-      if (!isNew) {
-        const it = DATA[index];
-        fillForm(it);
-      } else {
-        // sensible defaults
-        fillForm({
-          season: 'Winter',
-          type: 'OP',
-          unidentified: false,
-          clean_available: true,
-          issues: []
-        });
-      }
+  function openEditor(index, preset) {
+    els.modalNotice.textContent = '';
+    els.editForm.reset();
+    const isNew = (index === null || index === undefined);
+    els.modalTitle.textContent = isNew ? 'Add entry' : 'Edit entry';
 
-      els.modalBackdrop.style.display = 'flex';
-      els.modalBackdrop.setAttribute('aria-hidden', 'false');
+    if (!isNew) {
+      const it = DATA[index];
+      fillForm(it);
+    } else {
+      const baseDefaults = {
+        season: 'Winter',
+        type: 'OP',
+        unidentified: false,
+        clean_available: true,
+        issues: []
+      };
+      fillForm({ ...baseDefaults, ...(preset || {}) });
     }
+
+    els.modalBackdrop.style.display = 'flex';
+    els.modalBackdrop.setAttribute('aria-hidden', 'false');
+  }
 
     function closeEditor() {
       els.modalBackdrop.style.display = 'none';
