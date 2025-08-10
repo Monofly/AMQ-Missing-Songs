@@ -27,43 +27,46 @@
   </header>
 
   <main class="wrap">
-    <section class="filters">
-      <input id="q" type="search" placeholder="Search anime, song, or credits…" />
-      <select id="year"></select>
-      <select id="season">
-        <option value="all">All seasons</option>
-        <option>Winter</option>
-        <option>Spring</option>
-        <option>Summer</option>
-        <option>Fall</option>
-      </select>
-      <select id="type">
-        <option value="all">All types</option>
-        <option>OP</option>
-        <option>ED</option>
-        <option>Insert</option>
-      </select>
-      <select id="status">
-        <option value="all">All statuses</option>
-        <option value="complete">Complete</option>
-        <option value="unidentified">Unidentified</option>
-        <option value="missing_clean">Missing clean</option>
-        <option value="missing_artist">Missing artist</option>
-        <option value="missing_ann">Missing ANN</option>
-        <option value="missing_mal">Missing MAL</option>
-        <option value="has_issues">Has other issues</option>
-      </select>
-    </section>
+    <!-- NEW: sticky toolbar wrapper -->
+    <div id="toolbar" class="toolbar">
+      <section class="filters">
+        <input id="q" type="search" placeholder="Search anime, song, or credits…" />
+        <select id="year"></select>
+        <select id="season">
+          <option value="all">All seasons</option>
+          <option>Winter</option>
+          <option>Spring</option>
+          <option>Summer</option>
+          <option>Fall</option>
+        </select>
+        <select id="type">
+          <option value="all">All types</option>
+          <option>OP</option>
+          <option>ED</option>
+          <option>Insert</option>
+        </select>
+        <select id="status">
+          <option value="all">All statuses</option>
+          <option value="complete">Complete</option>
+          <option value="unidentified">Unidentified</option>
+          <option value="missing_clean">Missing clean</option>
+          <option value="missing_artist">Missing artist</option>
+          <option value="missing_ann">Missing ANN</option>
+          <option value="missing_mal">Missing MAL</option>
+          <option value="has_issues">Has other issues</option>
+        </select>
+      </section>
 
-    <div class="count" id="count">
-      <span id="countText">Loading…</span>
-      <span class="admin" id="adminBar">
-        <span id="loginStatus" class="notice">Not signed in</span>
-        <button class="btn" id="loginBtn">Login</button>
-        <button class="btn secondary" id="logoutBtn" style="display:none;">Logout</button>
-        <button class="btn" id="addBtn" style="display:none;">Add entry</button>
-        <span class="notice" id="saveNotice" style="display:none;"></span>
-      </span>
+      <div class="count" id="count">
+        <span id="countText">Loading…</span>
+        <span class="admin" id="adminBar">
+          <span id="loginStatus" class="notice">Not signed in</span>
+          <button class="btn" id="loginBtn">Login</button>
+          <button class="btn secondary" id="logoutBtn" style="display:none;">Logout</button>
+          <button class="btn" id="addBtn" style="display:none;">Add entry</button>
+          <span class="notice" id="saveNotice" style="display:none;"></span>
+        </span>
+      </div>
     </div>
 
     <table class="table" aria-describedby="count">
@@ -173,8 +176,8 @@
       </form>
     </div>
   </div>
-  <link rel="stylesheet" href="/styles.css" media="all">
-  <script src="/main.js" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=2" media="all">
+  <script src="/main.js?v=2" defer></script>
 </body>
 
 </html>
