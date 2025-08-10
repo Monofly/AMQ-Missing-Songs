@@ -24,10 +24,28 @@ export default {
         const PROD = 'https://monofly-amq.pages.dev';
         function isAllowedOriginStr(origin) {
             if (!origin) return false;
-            if (origin === PROD) return true;
-            if (origin.startsWith('https://') && origin.endsWith('.monofly-amq.pages.dev')) return true; // previews
-            if (origin === 'http://localhost:8788' || origin === 'http://127.0.0.1:8788') return true; // pages dev
-            return false;
+            try {
+                const u = new URL(origin);
+                const host = u.host; // e.g., "monofly-amq.pages.dev"
+                // Only HTTPS (except local dev)
+                const isHttps = u.protocol === 'https:';
+                const isLocal = (u.protocol === 'http:' && (host === 'localhost:8788' || host === '127.0.0.1:8788'));
+
+                if (!isHttps && !isLocal) return false;
+
+                // Production domain
+                if (host === 'monofly-amq.pages.dev') return true;
+
+                // Preview domains for this project: monofly-amq-<hash>.pages.dev
+                if (host.endsWith('.pages.dev') && host.startsWith('monofly-amq-')) return true;
+
+                // Local dev
+                if (host === 'localhost:8788' || host === '127.0.0.1:8788') return true;
+
+                return false;
+            } catch {
+                return false;
+            }
         }
 
         function binderFromRequest(req) {

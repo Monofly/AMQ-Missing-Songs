@@ -10,7 +10,9 @@
 }
 
 /* Hide elements the CSP-safe way */
-[hidden] { display: none !important; }
+[hidden] {
+    display: none !important;
+}
 
 * {
     box-sizing: border-box;
@@ -95,7 +97,8 @@ th {
     text-align: left;
     font-weight: 600;
     color: var(--muted);
-    z-index: 10; /* stays under the toolbar */
+    z-index: 10;
+    /* stays under the toolbar */
 }
 
 tbody tr:hover {
@@ -212,8 +215,9 @@ footer {
 }
 
 .notice.tip {
-  display: block;
-  margin: 0 0 10px; /* matches .grid / .grid-3 gap = 10px */
+    display: block;
+    margin: 0 0 10px;
+    /* matches .grid / .grid-3 gap = 10px */
 }
 
 /* Modal */
@@ -221,7 +225,9 @@ footer {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
-    display: none;
+    /* IMPORTANT: allow it to be visible when not [hidden] */
+    display: flex;
+    /* this is the default visible state */
     align-items: center;
     justify-content: center;
     z-index: 1000;
@@ -301,10 +307,13 @@ footer {
 .toolbar {
     position: sticky;
     top: 0;
-    z-index: 100; /* safely above table head */
-    background: var(--bg); /* solid to avoid peek-through */
+    z-index: 100;
+    /* safely above table head */
+    background: var(--bg);
+    /* solid to avoid peek-through */
     padding: 12px 0;
-    box-shadow: 0 2px 0 #1f2430; /* subtle divider line */
+    box-shadow: 0 2px 0 #1f2430;
+    /* subtle divider line */
 }
 
 thead th {
@@ -313,23 +322,28 @@ thead th {
 
 /* Stack fields vertically on the left of Status row */
 .stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px; /* same rhythm as your grid gaps */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* same rhythm as your grid gaps */
 }
 
 /* Make Notes feel intentional and comfortable to type in */
 .field-notes textarea {
-  min-height: 140px;            /* taller by default */
-  line-height: 1.4;
-  resize: vertical;             /* let users expand if needed */
+    min-height: 140px;
+    /* taller by default */
+    line-height: 1.4;
+    resize: vertical;
+    /* let users expand if needed */
 }
 
 /* Clearer focus ring for textareas */
 .field textarea:focus {
-  outline: none;
-  border-color: #2b3550;
-  box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15);
+    outline: none;
+    border-color: #2b3550;
+    box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15);
 }
 
-.is-open { display: flex !important; }
+.is-open {
+    display: flex !important;
+}

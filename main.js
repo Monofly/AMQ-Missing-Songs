@@ -595,17 +595,13 @@ function openEditor(index, preset) {
         fillForm({ ...baseDefaults, ...(preset || {}) });
     }
 
+    // Show the modal
+    els.modalBackdrop.hidden = false;                  // show
     els.modalBackdrop.setAttribute('aria-hidden', 'false');
-    els.modalBackdrop.hidden = false;  // show
 }
 
 function closeEditor() {
     els.modalBackdrop.hidden = true;   // hide
-    els.modalBackdrop.setAttribute('aria-hidden', 'true');
-}
-
-function closeEditor() {
-    els.modalBackdrop.style.display = 'none';
     els.modalBackdrop.setAttribute('aria-hidden', 'true');
 }
 
