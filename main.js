@@ -46,6 +46,27 @@ let currentUser = null;
 let CSRF = '';
 const CONTENT_PATH = 'data/anime_songs.json';
 
+function watchToolbarHeight() {
+    const toolbar = document.getElementById('toolbar');
+    if (!toolbar) return;
+
+    // Set immediately
+    setToolbarHeight();
+
+    // Update whenever the toolbar’s size changes
+    const ro = new ResizeObserver(() => setToolbarHeight());
+    ro.observe(toolbar);
+
+    // Fonts loading can change line-heights → update again when ready
+    if (document.fonts && typeof document.fonts.ready?.then === 'function') {
+        document.fonts.ready.then(() => setToolbarHeight()).catch(() => {});
+    }
+
+    // Also run on orientation changes (mobile)
+    window.addEventListener('orientationchange', () => setToolbarHeight());
+    window.addEventListener('resize', () => setToolbarHeight());
+}
+
 function uniqueYears(items) { return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a, b) => b - a); }
 function normalize(str) { return (str || '').toString().toLowerCase(); }
 function isEmpty(s) { return !s || !String(s).trim(); }
@@ -249,6 +270,7 @@ function populateYearOptions(items) {
 
 async function init() {
     try {
+        watchToolbarHeight();
         const res = await fetch(api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
@@ -285,9 +307,7 @@ async function init() {
         await restoreSession();
         await ensureCsrf();
         applyFilters();
-        // After first render, measure toolbar to set sticky header offset
         setToolbarHeight();
-        window.addEventListener('resize', setToolbarHeight);
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
     }
@@ -490,7 +510,10 @@ async function commitJson(newArray, commitMessage) {
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 
         els.saveNotice.textContent = 'Saved.';
-        setTimeout(() => { els.saveNotice.style.display = 'none'; }, 2000);
+        setTimeout(() => {
+            els.saveNotice.style.display = 'none';
+            setToolbarHeight(); // remeasure after the notice disappears
+        }, 2000);
         populateYearOptions(DATA);
         applyFilters();
 
@@ -673,6 +696,8 @@ async function confirmDelete(index) {
     const newArray = DATA.filter((_, i) => i !== index);
     await commitJson(newArray, `Delete entry at index ${index}`);
 }
+
+document.addEventListener('DOMContentLoaded', () => setToolbarHeight());
 
 // Start
 init();
