@@ -1,0 +1,379 @@
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+
+    // API routes we handle here; everything else goes to static assets
+    const API_PATHS = new Set([
+      '/csrf',
+      '/oauth/device-code',
+      '/oauth/poll',
+      '/auth/me',
+      '/logout',
+      '/content',
+      '/commit'
+    ]);
+
+    const isApi = API_PATHS.has(url.pathname);
+
+    // If not an API route, serve static files (your site)
+    if (!isApi && req.method !== 'OPTIONS') {
+      return env.ASSETS.fetch(req);
+    }
+
+    // ==== SECURITY: allowed origins (prod, previews, and local dev) ====
+    const PROD = 'https://monofly-amq.pages.dev';
+    function isAllowedOriginStr(origin) {
+      if (!origin) return false;
+      if (origin === PROD) return true;
+      if (origin.startsWith('https://') && origin.endsWith('.monofly-amq.pages.dev')) return true; // previews
+      if (origin === 'http://localhost:8788' || origin === 'http://127.0.0.1:8788') return true; // pages dev
+      return false;
+    }
+
+    function originFromRef(req) {
+      const ref = req.headers.get('Referer') || '';
+      try { return ref ? new URL(ref).origin : ''; } catch { return ''; }
+    }
+
+    function isFromAllowedSite(req) {
+      const origin = req.headers.get('Origin') || '';
+      if (origin) return isAllowedOriginStr(origin);
+      return isAllowedOriginStr(originFromRef(req));
+    }
+
+    function requireJson(req) {
+      return (req.headers.get('Content-Type') || '').toLowerCase().includes('application/json');
+    }
+
+    function getCookie(req, name) {
+      const cookie = req.headers.get('Cookie') || '';
+      const escaped = name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      const m = cookie.match(new RegExp('(?:^|;\\s*)' + escaped + '=([^;]*)'));
+      return m ? m[1] : null;
+    }
+
+    function setCookie(headers, name, value, maxAgeSeconds, opts = {}) {
+      const parts = [
+        `${name}=${value}`,
+        'Path=/',
+        'Secure',
+        // Same origin now — use Strict for stronger CSRF protection
+        'SameSite=Strict'
+      ];
+      if (opts.httpOnly !== false) parts.push('HttpOnly');
+      if (typeof maxAgeSeconds === 'number') parts.push(`Max-Age=${maxAgeSeconds}`);
+      headers.append('Set-Cookie', parts.join('; '));
+    }
+
+    function clearCookie(headers, name) {
+      headers.append('Set-Cookie', `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
+    }
+
+    function b64EncodeUnicode(str) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+
+    function b64url(buf) {
+      const bin = String.fromCharCode(...new Uint8Array(buf));
+      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    async function deriveCsrfFromToken(ghToken, binder) {
+      const enc = new TextEncoder().encode(`${ghToken}|${binder}`);
+      const digest = await crypto.subtle.digest('SHA-256', enc);
+      return b64url(digest);
+    }
+
+    async function requireCsrfDerived(req) {
+      const gh = getCookie(req, 'gh_at');
+      if (!gh) return false;
+      const header = req.headers.get('X-CSRF-Token') || '';
+      if (!header) return false;
+      const origin = req.headers.get('Origin') || originFromRef(req) || '';
+      const binder = origin || 'no-origin';
+      const expected = await deriveCsrfFromToken(gh, binder);
+      return header === expected;
+    }
+
+    const reqOrigin = req.headers.get('Origin') || '';
+    const corsBase = {
+      // Reflect trusted origin; otherwise fall back to prod
+      'Access-Control-Allow-Origin': isAllowedOriginStr(reqOrigin) ? reqOrigin : PROD,
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token',
+      'Access-Control-Allow-Credentials': 'true',
+      'Access-Control-Max-Age': '86400',
+      'Vary': 'Origin'
+    };
+
+    // Handle preflight for API routes
+    if (req.method === 'OPTIONS' && isApi) {
+      return new Response(null, { status: 204, headers: corsBase });
+    }
+
+    // Reject other origins for state-changing or cookie-bearing requests
+    const isSafeRead = req.method === 'GET' && url.pathname === '/content';
+    const hasCookie = !!req.headers.get('Cookie');
+
+    if (!isSafeRead && ((req.method !== 'GET' && req.method !== 'HEAD') || hasCookie)) {
+      if (!isFromAllowedSite(req)) {
+        return json({ error: 'Forbidden origin' }, 403, corsBase);
+      }
+    }
+
+    if (req.method === 'POST' && !requireJson(req)) {
+      return json({ error: 'Unsupported content type' }, 415, corsBase);
+    }
+
+    // App config (optionally make these environment variables in Pages settings)
+    const OWNER = env.OWNER || 'Monofly';
+    const REPO = env.REPO || 'monofly.github.io';
+    const BRANCH = env.BRANCH || 'main';
+    const CONTENT_PATH = env.CONTENT_PATH || 'data/anime_songs.json';
+
+    try {
+      if (req.method === 'GET' && url.pathname === '/csrf') {
+        return csrfEndpoint(req, corsBase);
+      }
+      if (req.method === 'POST' && url.pathname === '/oauth/device-code') {
+        const rl = rateLimit(req, '/oauth/device-code');
+        if (!rl.ok) return json({ error: 'rate_limited' }, 429, corsBase, { 'Retry-After': String(rl.retryAfter) });
+        return deviceCode(req, corsBase);
+      }
+      if (req.method === 'POST' && url.pathname === '/oauth/poll') {
+        const rl = rateLimit(req, '/oauth/poll');
+        if (!rl.ok) return json({ status: 'slow_down' }, 429, corsBase, { 'Retry-After': String(rl.retryAfter) });
+        return oauthPoll(req, corsBase);
+      }
+      if (req.method === 'GET' && url.pathname === '/auth/me') {
+        return authMe(req, corsBase, OWNER, REPO);
+      }
+      if (req.method === 'POST' && url.pathname === '/logout') {
+        if (!(await requireCsrfDerived(req))) {
+          return json({ error: 'CSRF check failed' }, 403, corsBase);
+        }
+        return logout(corsBase);
+      }
+      if (req.method === 'GET' && url.pathname === '/content') {
+        return getContent(corsBase, OWNER, REPO, BRANCH, CONTENT_PATH);
+      }
+      if (req.method === 'POST' && url.pathname === '/commit') {
+        const rl = rateLimit(req, '/commit');
+        if (!rl.ok) return json({ error: 'rate_limited' }, 429, corsBase, { 'Retry-After': String(rl.retryAfter) });
+        if (!(await requireCsrfDerived(req))) {
+          return json({ error: 'CSRF check failed' }, 403, corsBase);
+        }
+        return commitContent(req, corsBase, OWNER, REPO, BRANCH, CONTENT_PATH);
+      }
+
+      // Fallback to static asset if path not matched (safety net)
+      return env.ASSETS.fetch(req);
+
+    } catch (e) {
+      return json({ error: String(e.message || e) }, 500, corsBase);
+    }
+
+    // ===== helpers below =====
+
+    function json(obj, status = 200, headers = {}, extraHeaders = {}) {
+      const security = {
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+        'X-Frame-Options': 'DENY',
+        'Cross-Origin-Resource-Policy': 'same-site'
+      };
+      return new Response(JSON.stringify(obj), {
+        status,
+        headers: { 'Content-Type': 'application/json', ...security, ...headers, ...extraHeaders }
+      });
+    }
+
+    function keyFor(req, path) {
+      const ip = req.headers.get('CF-Connecting-IP') || '0.0.0.0';
+      return `${path}|${ip}`;
+    }
+
+    const RATE_LIMITS = {
+      '/oauth/device-code': { limit: 20, windowMs: 60_000 },
+      '/oauth/poll': { limit: 60, windowMs: 60_000 },
+      '/commit': { limit: 30, windowMs: 60_000 }
+    };
+    const buckets = globalThis.__buckets ??= new Map();
+
+    function rateLimit(req, path) {
+      const cfg = RATE_LIMITS[path];
+      if (!cfg) return { ok: true };
+      const k = keyFor(req, path);
+      const now = Date.now();
+      let b = buckets.get(k);
+      if (!b || now > b.resetAt) {
+        b = { count: 0, resetAt: now + cfg.windowMs };
+      }
+      b.count++;
+      buckets.set(k, b);
+      if (b.count > cfg.limit) {
+        return { ok: false, retryAfter: Math.ceil((b.resetAt - now) / 1000) };
+      }
+      return { ok: true };
+    }
+
+    async function csrfEndpoint(req, cors) {
+      const gh = getCookie(req, 'gh_at');
+      if (!gh) return json({ error: 'Unauthorized' }, 401, cors);
+      const origin = req.headers.get('Origin') || originFromRef(req) || '';
+      const csrf = await deriveCsrfFromToken(gh, origin || 'no-origin');
+      return json({ csrf }, 200, cors);
+    }
+
+    async function ghFetch(url, opts = {}) {
+      const headers = new Headers(opts.headers || {});
+      headers.set('User-Agent', 'monofly-anime-songs-worker');
+      if (!headers.has('Accept')) headers.set('Accept', 'application/vnd.github+json');
+      const res = await fetch(url, { ...opts, headers });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`GitHub ${res.status}: ${text}`);
+      }
+      return res;
+    }
+
+    async function deviceCode(req, cors) {
+      const body = await req.json().catch(() => ({}));
+      const { client_id, scope } = body || {};
+      if (!client_id) return json({ error: 'Missing client_id' }, 400, cors);
+      const gh = await ghFetch('https://github.com/login/device/code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id, scope })
+      }).then(r => r.json());
+      return json(gh, 200, cors);
+    }
+
+    async function oauthPoll(req, cors) {
+      const body = await req.json().catch(() => ({}));
+      const { client_id, device_code } = body || {};
+      if (!client_id || !device_code) return json({ error: 'Missing params' }, 400, cors);
+
+      const gh = await ghFetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id,
+          device_code,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      }).then(r => r.json());
+
+      if (gh.error) {
+        if (gh.error === 'authorization_pending') return json({ status: 'pending' }, 200, cors);
+        if (gh.error === 'slow_down') return json({ status: 'slow_down' }, 200, cors);
+        if (gh.error === 'expired_token') return json({ error: 'expired' }, 400, cors);
+        return json({ error: gh.error }, 400, cors);
+      }
+
+      const token = gh.access_token;
+      if (!token) return json({ error: 'No access_token' }, 400, cors);
+
+      const headers = new Headers(cors);
+      setCookie(headers, 'gh_at', token, 86400); // 1 day
+
+      const user = await ghFetch('https://api.github.com/user', {
+        headers: { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` }
+      }).then(r => r.json());
+
+      const origin = req.headers.get('Origin') || originFromRef(req) || '';
+      const csrf = await deriveCsrfFromToken(token, origin || 'no-origin');
+
+      return new Response(JSON.stringify({ ok: true, user, csrf }), { status: 200, headers });
+    }
+
+    async function authMe(req, cors, OWNER, REPO) {
+      const token = getCookie(req, 'gh_at');
+      if (!token) return json({ loggedIn: false }, 200, cors);
+
+      const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
+      const user = await ghFetch('https://api.github.com/user', { headers }).then(r => r.json());
+      const repo = await ghFetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers }).then(r => r.json());
+      const canPush = !!(repo?.permissions?.push);
+      const isOwner = user?.login && user.login.toLowerCase() === OWNER.toLowerCase();
+      return json({ loggedIn: true, user, canPush: canPush || isOwner }, 200, cors);
+    }
+
+    async function logout(cors) {
+      const headers = new Headers(cors);
+      clearCookie(headers, 'gh_at');
+      return new Response(null, { status: 204, headers });
+    }
+
+    async function getContent(cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
+      const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
+      try {
+        const res = await ghFetch(apiUrl, {
+          headers: { 'Accept': 'application/vnd.github.v3.raw' },
+          cache: 'no-store'
+        });
+        const text = await res.text();
+        let parsed = [];
+        try { parsed = JSON.parse(text); } catch { parsed = []; }
+        return json(parsed, 200, cors, { 'Cache-Control': 'no-store' });
+      } catch (e) {
+        return json({ error: 'Failed to load content: ' + e.message }, 500, cors);
+      }
+    }
+
+    function isAllowedUrl(s, hosts) {
+      try {
+        const u = new URL(s);
+        return (u.protocol === 'https:') && hosts.includes(u.host);
+      } catch { return false; }
+    }
+
+    async function commitContent(req, cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
+      const token = getCookie(req, 'gh_at');
+      if (!token) return json({ error: 'Unauthorized' }, 401, cors);
+
+      const body = await req.json().catch(() => ({}));
+      const { content, message } = body || {};
+      if (!Array.isArray(content)) return json({ error: 'Invalid content (expected array)' }, 400, cors);
+
+      for (const item of content) {
+        if (item.ann_url && !isAllowedUrl(item.ann_url, ['www.animenewsnetwork.com'])) {
+          return json({ error: 'Invalid ann_url' }, 400, cors);
+        }
+        if (item.mal_url && !isAllowedUrl(item.mal_url, ['myanimelist.net'])) {
+          return json({ error: 'Invalid mal_url' }, 400, cors);
+        }
+      }
+      if (!message) return json({ error: 'Missing commit message' }, 400, cors);
+
+      const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
+
+      const meta = await ghFetch(
+        `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}?ref=${BRANCH}`,
+        { headers }
+      ).then(r => r.json());
+
+      const payloadStr = JSON.stringify(content, null, 2) + '\n';
+      if (payloadStr.length > 500_000) {
+        return json({ error: 'Payload too large' }, 413, cors);
+      }
+
+      const update = await ghFetch(
+        `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}`,
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            message,
+            content: b64EncodeUnicode(payloadStr),
+            sha: meta.sha,
+            branch: BRANCH
+          })
+        }
+      ).then(r => r.json());
+
+      return json({ ok: true, content: update?.content }, 200, cors);
+    }
+  }
+};
