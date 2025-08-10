@@ -359,11 +359,14 @@ export default {
 
             // 2) Conditional request to GitHub with ETag
             const prevEtag = etagStore.get(apiUrl);
+            // build headers for GitHub read
             const headers = new Headers({
                 'Accept': 'application/vnd.github.v3.raw',
                 'User-Agent': 'monofly-anime-songs-worker'
             });
             if (prevEtag) headers.set('If-None-Match', prevEtag);
+            // Use a read-only token if set in Pages environment
+            if (env.GH_READ_TOKEN) headers.set('Authorization', `Bearer ${env.GH_READ_TOKEN}`);
 
             const res = await fetch(apiUrl, { headers, cache: 'no-store' });
 
