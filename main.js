@@ -1,9 +1,9 @@
 // ==== CONFIG ====
 const CONFIG = {
-    OWNER: 'Monofly',
-    REPO: 'monofly.github.io',
-    BRANCH: 'main',
-    CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
+  OWNER: 'Monofly',
+  REPO: 'AMQ-Missing-Songs',
+  BRANCH: 'main',
+  CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
 };
 // ===============
 
