@@ -5,8 +5,6 @@ const CONFIG = {
     BRANCH: 'main',
     CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
 };
-// Cloudflare Worker base URL
-const WORKER_URL = 'https://skibidi-toilet-727.blufir123.workers.dev';
 // ===============
 
 const els = {
@@ -30,6 +28,9 @@ const els = {
     cancelBtn: document.getElementById('cancelBtn'),
     saveBtn: document.getElementById('saveBtn')
 };
+
+// Helper to build same-origin API URLs
+const api = (p) => p;
 
 let DATA = [];
 let isAdmin = false;
@@ -239,7 +240,7 @@ function populateYearOptions(items) {
 
 async function init() {
     try {
-        const res = await fetch(`${WORKER_URL}/content`, {
+        const res = await fetch(api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             credentials: 'include', // include cookies (not strictly required for GET /content)
@@ -285,7 +286,7 @@ async function init() {
 function wireAdminBar() {
     els.loginBtn.addEventListener('click', loginWithGitHub);
     els.logoutBtn.addEventListener('click', async () => {
-        await fetch(`${WORKER_URL}/logout`, {
+        await fetch(api('/logout'), {
             method: 'POST',
             credentials: 'include'
         });
@@ -319,7 +320,7 @@ function updateAdminVisibility() {
 async function ensureCsrf() {
     if (CSRF) return CSRF;
     try {
-        const r = await fetch(`${WORKER_URL}/csrf`, {
+        const r = await fetch(api('/csrf'), {
             method: 'GET',
             credentials: 'include',
             headers: { 'Accept': 'application/json' }
@@ -352,7 +353,7 @@ function linkOrDash(href, label) {
 async function restoreSession() {
     // Ask worker who we are (uses cookie)
     try {
-        const res = await fetch(`${WORKER_URL}/auth/me`, {
+        const res = await fetch(api('/auth/me'), {
             headers: { 'Accept': 'application/json' },
             credentials: 'include'
         });
@@ -374,7 +375,7 @@ async function restoreSession() {
 
 async function loginWithGitHub() {
     // 1) Start device flow via Worker
-    const start = await fetch(`${WORKER_URL}/oauth/device-code`, {
+    const start = await fetch(api('/oauth/device-code'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         credentials: 'include',
@@ -399,7 +400,7 @@ async function loginWithGitHub() {
 
     while (Date.now() - began < (expires_in * 1000)) {
         await new Promise(r => setTimeout(r, pollMs));
-        const resp = await fetch(`${WORKER_URL}/oauth/poll`, {
+        const resp = await fetch(api('/oauth/poll'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             credentials: 'include',
@@ -450,7 +451,7 @@ async function commitJson(newArray, commitMessage) {
         // Strip UI-only fields
         const payloadArray = newArray.map(({ _index, ...rest }) => rest);
 
-        const res = await fetch(`${WORKER_URL}/commit`, {
+        const res = await fetch(api('/commit'), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
