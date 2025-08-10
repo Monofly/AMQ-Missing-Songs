@@ -336,7 +336,10 @@ export default {
 
             // 2) Conditional request to GitHub with ETag
             const prevEtag = etagStore.get(apiUrl);
-            const headers = new Headers({ 'Accept': 'application/vnd.github.v3.raw' });
+            const headers = new Headers({
+                'Accept': 'application/vnd.github.v3.raw',
+                'User-Agent': 'monofly-anime-songs-worker'
+            });
             if (prevEtag) headers.set('If-None-Match', prevEtag);
 
             const res = await fetch(apiUrl, { headers, cache: 'no-store' });
@@ -358,7 +361,10 @@ export default {
 
                 // 2c) Last-resort: refetch without If-None-Match to get the body
                 const res2 = await fetch(apiUrl, {
-                    headers: new Headers({ 'Accept': 'application/vnd.github.v3.raw' }),
+                    headers: new Headers({
+                        'Accept': 'application/vnd.github.v3.raw',
+                        'User-Agent': 'monofly-anime-songs-worker'
+                    }),
                     cache: 'no-store'
                 });
                 if (!res2.ok) {
