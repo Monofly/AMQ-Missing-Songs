@@ -318,8 +318,10 @@ async function init() {
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
         wireAdminBar();
-        await restoreSession();
-        await ensureCsrf();
+        if (localStorage.getItem('wasAdminOrUser') === '1') {
+            await restoreSession();
+            await ensureCsrf();
+        }
         applyFilters();
         setToolbarHeight();
     } catch (e) {
@@ -330,7 +332,10 @@ async function init() {
 // ===== Admin UI and GitHub API =====
 
 function wireAdminBar() {
-    els.loginBtn.addEventListener('click', loginWithGitHub);
+    els.loginBtn.addEventListener('click', async () => {
+        await restoreSession();
+        await loginWithGitHub();
+    });
     els.logoutBtn.addEventListener('click', async () => {
         await ensureCsrf();
         await fetch(api('/logout'), {
@@ -412,9 +417,11 @@ async function restoreSession() {
         if (info.loggedIn) {
             currentUser = info.user;
             isAdmin = !!info.canPush;
+            localStorage.setItem('wasAdminOrUser', '1');
         } else {
             currentUser = null;
             isAdmin = false;
+            localStorage.removeItem('wasAdminOrUser');
         }
     } catch {
         currentUser = null;

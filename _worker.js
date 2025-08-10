@@ -93,7 +93,7 @@ export default {
         }
 
         async function requireCsrfDerived(req) {
-            const gh = getCookie(req, 'gh_at');
+            const gh = getCookie(req, '__Host-gh_at');
             if (!gh) return false;
             const header = req.headers.get('X-CSRF-Token') || '';
             if (!header) return false;
@@ -245,7 +245,7 @@ export default {
         }
 
         async function csrfEndpoint(req, cors) {
-            const gh = getCookie(req, 'gh_at');
+            const gh = getCookie(req, '__Host-gh_at');
             if (!gh) return json({ error: 'Unauthorized' }, 401, cors);
             const binder = binderFromRequest(req);
             const csrf = await deriveCsrfFromToken(gh, binder);
@@ -310,7 +310,7 @@ export default {
             if (!token) return json({ error: 'No access_token' }, 400, cors);
 
             const headers = new Headers(cors);
-            setCookie(headers, 'gh_at', token, 86400); // 1 day
+            setCookie(headers, '__Host-gh_at', token, 86400);
 
             const user = await ghFetch('https://api.github.com/user', {
                 headers: { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` }
@@ -323,7 +323,7 @@ export default {
         }
 
         async function authMe(req, cors, OWNER, REPO) {
-            const token = getCookie(req, 'gh_at');
+            const token = getCookie(req, '__Host-gh_at');
             if (!token) return json({ loggedIn: false }, 200, cors);
 
             const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
@@ -336,7 +336,7 @@ export default {
 
         async function logout(cors) {
             const headers = new Headers(cors);
-            clearCookie(headers, 'gh_at');
+            clearCookie(headers, '__Host-gh_at');
             return new Response(null, { status: 204, headers });
         }
 
@@ -353,7 +353,7 @@ export default {
             if (cached) {
                 const body = await cached.text();
                 return json(JSON.parse(body), 200, cors, {
-                    'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+                    'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
                 });
             }
 
@@ -373,13 +373,13 @@ export default {
                 const stale = await caches.default.match(cacheKey);
                 if (stale) {
                     const body = await stale.text();
-                    return json(JSON.parse(body), 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                    return json(JSON.parse(body), 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
                 }
 
                 // 2b) Try in-memory backup
                 if (bodyStore.has(apiUrl)) {
                     const mem = bodyStore.get(apiUrl);
-                    return json(mem, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                    return json(mem, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
                 }
 
                 // 2c) Last-resort: refetch without If-None-Match to get the body
@@ -408,12 +408,12 @@ export default {
                     status: 200,
                     headers: {
                         'Content-Type': 'application/json',
-                        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+                        'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
                     }
                 });
                 await caches.default.put(cacheKey, toCache2.clone());
 
-                return json(parsed2, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                return json(parsed2, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
             }
 
             // Any non-2xx, non-304 => error
@@ -437,12 +437,12 @@ export default {
                 status: 200,
                 headers: {
                     'Content-Type': 'application/json',
-                    'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+                    'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
                 }
             });
             await caches.default.put(cacheKey, toCache.clone());
 
-            return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+            return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
         }
 
         function isAllowedUrl(s, hosts) {
@@ -453,7 +453,7 @@ export default {
         }
 
         async function commitContent(req, cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
-            const token = getCookie(req, 'gh_at');
+            const token = getCookie(req, '__Host-gh_at');
             if (!token) return json({ error: 'Unauthorized' }, 401, cors);
 
             const body = await req.json().catch(() => ({}));
