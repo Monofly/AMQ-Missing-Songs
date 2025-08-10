@@ -70,7 +70,10 @@ export default {
         }
 
         function b64EncodeUnicode(str) {
-            return btoa(unescape(encodeURIComponent(str)));
+            const bytes = new TextEncoder().encode(str);
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
         }
 
         function b64url(buf) {
@@ -316,16 +319,58 @@ export default {
 
         async function getContent(cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
             const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
-            try {
-                const res = await ghFetch(apiUrl, {
-                    headers: { 'Accept': 'application/vnd.github.v3.raw' },
-                    cache: 'no-store'
+
+            // 1) Try CDN cache first
+            const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
+            const cached = await caches.default.match(cacheKey);
+            if (cached) {
+                // Return cached response (fast), still sets proper CORS + security headers
+                const body = await cached.text();
+                return json(JSON.parse(body), 200, cors, {
+                    'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
                 });
+            }
+
+            // 2) Use ETag to minimize GitHub bandwidth (optional best-effort)
+            const etagStore = (globalThis.__etagStore ??= new Map());
+            const prevEtag = etagStore.get(apiUrl);
+
+            try {
+                const headers = new Headers({ 'Accept': 'application/vnd.github.v3.raw' });
+                if (prevEtag) headers.set('If-None-Match', prevEtag);
+
+                const res = await ghFetch(apiUrl, { headers, cache: 'no-store' });
+
+                // 200 OK with new content
                 const text = await res.text();
                 let parsed = [];
                 try { parsed = JSON.parse(text); } catch { parsed = []; }
-                return json(parsed, 200, cors, { 'Cache-Control': 'no-store' });
+
+                // Update ETag
+                const newEtag = res.headers.get('ETag');
+                if (newEtag) etagStore.set(apiUrl, newEtag);
+
+                // 3) Put into CDN cache for 60s (serve stale up to 5 min)
+                const toCache = new Response(JSON.stringify(parsed), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+                    }
+                });
+                await caches.default.put(cacheKey, toCache.clone());
+
+                return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+
             } catch (e) {
+                // If GitHub returned 304 Not Modified, we can reuse stale cache
+                if (String(e.message || e).includes('304')) {
+                    const stale = await caches.default.match(cacheKey);
+                    if (stale) {
+                        const body = await stale.text();
+                        return json(JSON.parse(body), 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                    }
+                }
                 return json({ error: 'Failed to load content: ' + e.message }, 500, cors);
             }
         }
@@ -381,6 +426,11 @@ export default {
                 }
             ).then(r => r.json());
 
+            // Purge CDN cache for /content so changes show immediately
+            try {
+                const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
+                await caches.default.delete(cacheKey);
+            } catch { }
             return json({ ok: true, content: update?.content }, 200, cors);
         }
     }
