@@ -70,6 +70,9 @@ function watchToolbarHeight() {
 function uniqueYears(items) { return Array.from(new Set(items.map(x => x.year))).filter(Boolean).sort((a, b) => b - a); }
 function normalize(str) { return (str || '').toString().toLowerCase(); }
 function isEmpty(s) { return !s || !String(s).trim(); }
+function computeUnidentified(obj) {
+  return isEmpty(obj.song_title_romaji) && isEmpty(obj.song_title_original);
+}
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c])); }
 
 function parseEpisodeStart(ep) {
@@ -540,30 +543,29 @@ async function commitJson(newArray, commitMessage) {
 // ===== Editor modal =====
 
 function buildPresetFromShow(it) {
-    return {
-        anime_en: it.anime_en || '',
-        anime_romaji: it.anime_romaji || '',
-        year: it.year || '',
-        season: it.season || 'Winter',
-        type: 'OP', // default; can be changed in the form
-        song_title_romaji: '',
-        song_title_original: '',
-        artist_romaji: '',
-        artist_original: '',
-        composer_romaji: '',
-        composer_original: '',
-        arranger_romaji: '',
-        arranger_original: '',
-        episode: '',
-        time_start: '',
-        time_end: '',
-        unidentified: false,
-        clean_available: true,
-        ann_url: it.ann_url || '',
-        mal_url: it.mal_url || '',
-        issues: [],
-        notes: ''
-    };
+  return {
+    anime_en: it.anime_en || '',
+    anime_romaji: it.anime_romaji || '',
+    year: it.year || '',
+    season: it.season || 'Winter',
+    type: 'OP', // default; can be changed in the form
+    song_title_romaji: '',
+    song_title_original: '',
+    artist_romaji: '',
+    artist_original: '',
+    composer_romaji: '',
+    composer_original: '',
+    arranger_romaji: '',
+    arranger_original: '',
+    episode: '',
+    time_start: '',
+    time_end: '',
+    clean_available: true,
+    ann_url: it.ann_url || '',
+    mal_url: it.mal_url || '',
+    issues: [],
+    notes: ''
+  };
 }
 
 function openEditor(index, preset) {
@@ -577,12 +579,11 @@ function openEditor(index, preset) {
         fillForm(it);
     } else {
         const baseDefaults = {
-            season: 'Winter',
-            type: 'OP',
-            unidentified: false,
-            clean_available: true,
-            issues: []
-        };
+  season: 'Winter',
+  type: 'OP',
+  clean_available: true,
+  issues: []
+};
         fillForm({ ...baseDefaults, ...(preset || {}) });
     }
 
@@ -596,76 +597,78 @@ function closeEditor() {
 }
 
 function fillForm(it) {
-    const f = els.editForm;
-    f.elements.anime_en.value = it.anime_en || '';
-    f.elements.anime_romaji.value = it.anime_romaji || '';
-    f.elements.year.value = it.year || '';
-    f.elements.season.value = it.season || 'Winter';
-    f.elements.type.value = it.type || 'OP';
-    f.elements.episode.value = (it.episode ?? '');
-    f.elements.time_start.value = it.time_start || '';
-    f.elements.time_end.value = it.time_end || '';
+  const f = els.editForm;
+  f.elements.anime_en.value = it.anime_en || '';
+  f.elements.anime_romaji.value = it.anime_romaji || '';
+  f.elements.year.value = it.year || '';
+  f.elements.season.value = it.season || 'Winter';
+  f.elements.type.value = it.type || 'OP';
+  f.elements.episode.value = (it.episode ?? '');
+  f.elements.time_start.value = it.time_start || '';
+  f.elements.time_end.value = it.time_end || '';
 
-    f.elements.song_title_romaji.value = it.song_title_romaji || '';
-    f.elements.song_title_original.value = it.song_title_original || '';
+  f.elements.song_title_romaji.value = it.song_title_romaji || '';
+  f.elements.song_title_original.value = it.song_title_original || '';
 
-    f.elements.artist_romaji.value = it.artist_romaji || '';
-    f.elements.artist_original.value = it.artist_original || '';
+  f.elements.artist_romaji.value = it.artist_romaji || '';
+  f.elements.artist_original.value = it.artist_original || '';
 
-    f.elements.composer_romaji.value = it.composer_romaji || '';
-    f.elements.composer_original.value = it.composer_original || '';
+  f.elements.composer_romaji.value = it.composer_romaji || '';
+  f.elements.composer_original.value = it.composer_original || '';
 
-    f.elements.arranger_romaji.value = it.arranger_romaji || '';
-    f.elements.arranger_original.value = it.arranger_original || '';
+  f.elements.arranger_romaji.value = it.arranger_romaji || '';
+  f.elements.arranger_original.value = it.arranger_original || '';
 
-    f.elements.unidentified.value = String(!!it.unidentified);
-    f.elements.clean_available.value = String(!(it.clean_available === false));
+  f.elements.clean_available.value = String(!(it.clean_available === false));
 
-    f.elements.ann_url.value = it.ann_url || '';
-    f.elements.mal_url.value = it.mal_url || '';
+  f.elements.ann_url.value = it.ann_url || '';
+  f.elements.mal_url.value = it.mal_url || '';
 
-    f.elements.issues.value = Array.isArray(it.issues) ? it.issues.join(', ') : '';
-    f.elements.notes.value = it.notes || '';
+  f.elements.issues.value = Array.isArray(it.issues) ? it.issues.join(', ') : '';
+  f.elements.notes.value = it.notes || '';
 
-    f.elements._index.value = (it._index ?? '');
+  f.elements._index.value = (it._index ?? '');
 }
 
 function readForm() {
-    const f = els.editForm;
-    // Coerce types where appropriate
-    const yearRaw = f.elements.year.value.trim();
-    const year = yearRaw ? Number(yearRaw) : '';
-    const unidentified = f.elements.unidentified.value === 'true';
-    const clean_available = f.elements.clean_available.value === 'true';
-    const issues = f.elements.issues.value.split(',').map(s => s.trim()).filter(Boolean);
+  const f = els.editForm;
+  // Coerce types where appropriate
+  const yearRaw = f.elements.year.value.trim();
+  const year = yearRaw ? Number(yearRaw) : '';
+  const clean_available = f.elements.clean_available.value === 'true';
+  const issues = f.elements.issues.value.split(',').map(s => s.trim()).filter(Boolean);
 
-    const out = {
-        anime_en: f.elements.anime_en.value.trim(),
-        anime_romaji: f.elements.anime_romaji.value.trim(),
-        year: Number.isFinite(year) && String(year).length === 4 ? year : '',
-        season: f.elements.season.value,
-        type: f.elements.type.value,
-        song_title_romaji: f.elements.song_title_romaji.value.trim(),
-        song_title_original: f.elements.song_title_original.value.trim(),
-        artist_romaji: f.elements.artist_romaji.value.trim(),
-        artist_original: f.elements.artist_original.value.trim(),
-        composer_romaji: f.elements.composer_romaji.value.trim(),
-        composer_original: f.elements.composer_original.value.trim(),
-        arranger_romaji: f.elements.arranger_romaji.value.trim(),
-        arranger_original: f.elements.arranger_original.value.trim(),
-        episode: f.elements.episode.value.trim(),
-        time_start: f.elements.time_start.value.trim(),
-        time_end: f.elements.time_end.value.trim(),
-        unidentified,
-        clean_available,
-        ann_url: f.elements.ann_url.value.trim(),
-        mal_url: f.elements.mal_url.value.trim(),
-        issues,
-        notes: f.elements.notes.value.trim()
-    };
-    const idxStr = f.elements._index.value;
-    const index = idxStr === '' ? null : Number(idxStr);
-    return { out, index };
+  const out = {
+    anime_en: f.elements.anime_en.value.trim(),
+    anime_romaji: f.elements.anime_romaji.value.trim(),
+    year: Number.isFinite(year) && String(year).length === 4 ? year : '',
+    season: f.elements.season.value,
+    type: f.elements.type.value,
+    song_title_romaji: f.elements.song_title_romaji.value.trim(),
+    song_title_original: f.elements.song_title_original.value.trim(),
+    artist_romaji: f.elements.artist_romaji.value.trim(),
+    artist_original: f.elements.artist_original.value.trim(),
+    composer_romaji: f.elements.composer_romaji.value.trim(),
+    composer_original: f.elements.composer_original.value.trim(),
+    arranger_romaji: f.elements.arranger_romaji.value.trim(),
+    arranger_original: f.elements.arranger_original.value.trim(),
+    episode: f.elements.episode.value.trim(),
+    time_start: f.elements.time_start.value.trim(),
+    time_end: f.elements.time_end.value.trim(),
+    // Auto-compute
+    unidentified: false, // set below
+    clean_available,
+    ann_url: f.elements.ann_url.value.trim(),
+    mal_url: f.elements.mal_url.value.trim(),
+    issues,
+    notes: f.elements.notes.value.trim()
+  };
+
+  out.unidentified = computeUnidentified(out);
+
+  const idxStr = f.elements._index.value;
+  const index = idxStr === '' ? null : Number(idxStr);
+  return { out, index };
 }
 
 els.cancelBtn.addEventListener('click', () => closeEditor());
