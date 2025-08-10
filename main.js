@@ -340,20 +340,29 @@ async function init() {
 
 function wireAdminBar() {
     els.loginBtn.addEventListener('click', async () => {
-        await restoreSession();
         await loginWithGitHub();
     });
     els.logoutBtn.addEventListener('click', async () => {
         await ensureCsrf();
         await fetch(api('/logout'), {
             method: 'POST',
-            headers: { 'X-CSRF-Token': CSRF },
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': CSRF,
+                'Accept': 'application/json'
+            },
+            body: '{}',
             credentials: 'include'
         });
+        // Clear local state fully
+        CSRF = '';
         currentUser = null;
         isAdmin = false;
+        localStorage.removeItem('wasAdminOrUser');
         updateAdminVisibility();
         applyFilters();
+        // Reload to be 100% sure no stale state lingers
+        location.reload();
     });
     els.addBtn.addEventListener('click', () => openEditor(null));
 }

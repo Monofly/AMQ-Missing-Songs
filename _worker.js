@@ -194,7 +194,9 @@ export default {
             }
         }
 
-        if (req.method === 'POST' && !requireJson(req)) {
+        // Only some POST endpoints require JSON
+        const JSON_POSTS = new Set(['/oauth/device-code', '/oauth/poll', '/commit']);
+        if (req.method === 'POST' && JSON_POSTS.has(url.pathname) && !requireJson(req)) {
             return json({ error: 'Unsupported content type' }, 415, corsBase);
         }
 
@@ -264,10 +266,10 @@ export default {
 
         async function csrfEndpoint(req, cors) {
             const gh = getCookie(req, '__Host-gh_at');
-            if (!gh) return json({ error: 'Unauthorized' }, 401, cors);
+            if (!gh) return json({ error: 'Unauthorized' }, 401, cors, { 'Cache-Control': 'no-store' });
             const binder = binderFromRequest(req);
             const csrf = await deriveCsrfFromToken(gh, binder);
-            return json({ csrf }, 200, cors);
+            return json({ csrf }, 200, cors, { 'Cache-Control': 'no-store' });
         }
 
         async function ghFetch(url, opts = {}) {
@@ -296,7 +298,7 @@ export default {
                 body: new URLSearchParams({ client_id, scope: scope || '' }).toString()
             }).then(r => r.json());
 
-            return json(gh, 200, cors);
+            return json(gh, 200, cors, { 'Cache-Control': 'no-store' });
         }
 
         async function oauthPoll(req, cors) {
@@ -337,24 +339,26 @@ export default {
             const origin = req.headers.get('Origin') || originFromRef(req) || '';
             const csrf = await deriveCsrfFromToken(token, binderFromRequest(req));
 
+            headers.set('Cache-Control', 'no-store');
             return new Response(JSON.stringify({ ok: true, user, csrf }), { status: 200, headers });
         }
 
         async function authMe(req, cors, OWNER, REPO) {
             const token = getCookie(req, '__Host-gh_at');
-            if (!token) return json({ loggedIn: false }, 200, cors);
+            if (!token) return json({ loggedIn: false }, 200, cors, { 'Cache-Control': 'no-store' });
 
             const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
             const user = await ghFetch('https://api.github.com/user', { headers }).then(r => r.json());
             const repo = await ghFetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers }).then(r => r.json());
             const canPush = !!(repo?.permissions?.push);
             const isOwner = user?.login && user.login.toLowerCase() === OWNER.toLowerCase();
-            return json({ loggedIn: true, user, canPush: canPush || isOwner }, 200, cors);
+            return json({ loggedIn: true, user, canPush: canPush || isOwner }, 200, cors, { 'Cache-Control': 'no-store' });
         }
 
         async function logout(cors) {
             const headers = new Headers(cors);
             clearCookie(headers, '__Host-gh_at');
+            headers.set('Cache-Control', 'no-store');
             return new Response(null, { status: 204, headers });
         }
 
