@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: /oauth/
+Disallow: /auth/
+Disallow: /csrf
+Disallow: /commit
