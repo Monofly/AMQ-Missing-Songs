@@ -106,6 +106,35 @@ export default {
             'Vary': 'Origin'
         };
 
+        function keyFor(req, path) {
+            const ip = req.headers.get('CF-Connecting-IP') || '0.0.0.0';
+            return `${path}|${ip}`;
+        }
+
+        const RATE_LIMITS = {
+            '/oauth/device-code': { limit: 20, windowMs: 60_000 },
+            '/oauth/poll': { limit: 60, windowMs: 60_000 },
+            '/commit': { limit: 30, windowMs: 60_000 }
+        };
+        const buckets = globalThis.__buckets ??= new Map();
+
+        function rateLimit(req, path) {
+            const cfg = RATE_LIMITS[path];
+            if (!cfg) return { ok: true };
+            const k = keyFor(req, path);
+            const now = Date.now();
+            let b = buckets.get(k);
+            if (!b || now > b.resetAt) {
+                b = { count: 0, resetAt: now + cfg.windowMs };
+            }
+            b.count++;
+            buckets.set(k, b);
+            if (b.count > cfg.limit) {
+                return { ok: false, retryAfter: Math.ceil((b.resetAt - now) / 1000) };
+            }
+            return { ok: true };
+        }
+
         // Handle preflight for API routes
         if (req.method === 'OPTIONS' && isApi) {
             return new Response(null, { status: 204, headers: corsBase });
@@ -187,35 +216,6 @@ export default {
                 status,
                 headers: { 'Content-Type': 'application/json', ...security, ...headers, ...extraHeaders }
             });
-        }
-
-        function keyFor(req, path) {
-            const ip = req.headers.get('CF-Connecting-IP') || '0.0.0.0';
-            return `${path}|${ip}`;
-        }
-
-        const RATE_LIMITS = {
-            '/oauth/device-code': { limit: 20, windowMs: 60_000 },
-            '/oauth/poll': { limit: 60, windowMs: 60_000 },
-            '/commit': { limit: 30, windowMs: 60_000 }
-        };
-        const buckets = globalThis.__buckets ??= new Map();
-
-        function rateLimit(req, path) {
-            const cfg = RATE_LIMITS[path];
-            if (!cfg) return { ok: true };
-            const k = keyFor(req, path);
-            const now = Date.now();
-            let b = buckets.get(k);
-            if (!b || now > b.resetAt) {
-                b = { count: 0, resetAt: now + cfg.windowMs };
-            }
-            b.count++;
-            buckets.set(k, b);
-            if (b.count > cfg.limit) {
-                return { ok: false, retryAfter: Math.ceil((b.resetAt - now) / 1000) };
-            }
-            return { ok: true };
         }
 
         async function csrfEndpoint(req, cors) {
