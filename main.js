@@ -437,8 +437,10 @@ async function verifyAdmin() {
 }
 
 function b64EncodeUnicode(str) {
-    // Proper base64 for Unicode
-    return btoa(unescape(encodeURIComponent(str)));
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
 async function commitJson(newArray, commitMessage) {
