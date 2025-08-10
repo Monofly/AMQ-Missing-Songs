@@ -112,7 +112,7 @@ export default {
             // Reflect trusted origin; otherwise fall back to prod
             'Access-Control-Allow-Origin': isAllowedOriginStr(reqOrigin) ? reqOrigin : PROD,
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD',
-            'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token',
+            'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token, X-CSRF-Token',
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '86400',
             'Vary': 'Origin'

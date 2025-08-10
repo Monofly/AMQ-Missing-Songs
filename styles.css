@@ -9,6 +9,9 @@
     --warn: #fbbf24;
 }
 
+/* Hide elements the CSP-safe way */
+[hidden] { display: none !important; }
+
 * {
     box-sizing: border-box;
 }
@@ -328,3 +331,5 @@ thead th {
   border-color: #2b3550;
   box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15);
 }
+
+.is-open { display: flex !important; }

@@ -62,9 +62,9 @@
         <span class="admin" id="adminBar">
           <span id="loginStatus" class="notice">Not signed in</span>
           <button class="btn" id="loginBtn">Login</button>
-          <button class="btn secondary" id="logoutBtn" style="display:none;">Logout</button>
-          <button class="btn" id="addBtn" style="display:none;">Add entry</button>
-          <span class="notice" id="saveNotice" style="display:none;"></span>
+          <button class="btn secondary" id="logoutBtn" hidden>Logout</button>
+          <button class="btn" id="addBtn" hidden>Add entry</button>
+          <span class="notice" id="saveNotice" hidden></span>
         </span>
       </div>
     </div>
@@ -88,7 +88,7 @@
   </footer>
 
   <!-- Modal -->
-  <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true">
+  <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <h3 id="modalTitle">Add/Edit entry</h3>
       <form id="editForm">
@@ -129,7 +129,8 @@
           <div class="field"><label>Song title (Romaji)</label><input name="song_title_romaji" /></div>
           <div class="field"><label>Song title (Original)</label><input name="song_title_original" /></div>
         </div>
-        <div class="notice tip">Tip: Leave both song title fields blank to automatically mark this entry as Unidentified.</div>
+        <div class="notice tip">Tip: Leave both song title fields blank to automatically mark this entry as
+          Unidentified.</div>
         <div class="grid-3">
           <div class="field"><label>Artist (Romaji)</label><input name="artist_romaji" /></div>
           <div class="field"><label>Artist (Original)</label><input name="artist_original" /></div>
@@ -159,7 +160,7 @@
               <input name="issues" placeholder="needs_id, needs_romaji" />
             </div>
           </div>
-        
+
           <!-- Right column: Notes -->
           <div class="field field-notes">
             <label>Notes</label>
@@ -178,8 +179,8 @@
       </form>
     </div>
   </div>
-  <link rel="stylesheet" href="/styles.css?v=3" media="all">
-  <script src="/main.js?v=3" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=4" media="all">
+  <script src="/main.js?v=4" defer></script>
 </body>
 
 </html>

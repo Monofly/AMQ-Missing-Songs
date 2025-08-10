@@ -29,6 +29,9 @@ const els = {
     saveBtn: document.getElementById('saveBtn')
 };
 
+function show(el) { if (el) el.hidden = false; }
+function hide(el) { if (el) el.hidden = true; }
+
 function setToolbarHeight() {
     const toolbar = document.getElementById('toolbar');
     if (!toolbar) return;
@@ -318,6 +321,10 @@ async function init() {
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
         wireAdminBar();
+
+        // Make sure toolbar matches the default (not signed in) state immediately:
+        updateAdminVisibility();
+
         if (localStorage.getItem('wasAdminOrUser') === '1') {
             await restoreSession();
             await ensureCsrf();
@@ -354,21 +361,20 @@ function wireAdminBar() {
 function updateAdminVisibility() {
     if (currentUser && isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login}`;
-        els.loginBtn.style.display = 'none';
-        els.logoutBtn.style.display = '';
-        els.addBtn.style.display = '';
+        hide(els.loginBtn);
+        show(els.logoutBtn);
+        show(els.addBtn);
     } else if (currentUser && !isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
-        els.loginBtn.style.display = 'none';
-        els.logoutBtn.style.display = '';
-        els.addBtn.style.display = 'none';
+        hide(els.loginBtn);
+        show(els.logoutBtn);
+        hide(els.addBtn);
     } else {
         els.loginStatus.textContent = 'Not signed in';
-        els.loginBtn.style.display = '';
-        els.logoutBtn.style.display = 'none';
-        els.addBtn.style.display = 'none';
+        show(els.loginBtn);
+        hide(els.logoutBtn);
+        hide(els.addBtn);
     }
-    // Recalculate sticky offset if the toolbar height changed
     setToolbarHeight();
 }
 
@@ -503,9 +509,8 @@ function b64EncodeUnicode(str) {
 
 async function commitJson(newArray, commitMessage) {
     els.saveBtn.disabled = true;
-    els.saveNotice.style.display = '';
+    show(els.saveNotice);
     els.saveNotice.textContent = 'Saving…';
-
     try {
         await ensureCsrf();
         // Strip UI-only fields
@@ -535,8 +540,8 @@ async function commitJson(newArray, commitMessage) {
 
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => {
-            els.saveNotice.style.display = 'none';
-            setToolbarHeight(); // remeasure after the notice disappears
+            hide(els.saveNotice);
+            setToolbarHeight();
         }, 2000);
         populateYearOptions(DATA);
         applyFilters();
@@ -586,17 +591,17 @@ function openEditor(index, preset) {
         const it = DATA[index];
         fillForm(it);
     } else {
-        const baseDefaults = {
-            season: 'Winter',
-            type: 'OP',
-            clean_available: true,
-            issues: []
-        };
+        const baseDefaults = { season: 'Winter', type: 'OP', clean_available: true, issues: [] };
         fillForm({ ...baseDefaults, ...(preset || {}) });
     }
 
-    els.modalBackdrop.style.display = 'flex';
     els.modalBackdrop.setAttribute('aria-hidden', 'false');
+    els.modalBackdrop.hidden = false;  // show
+}
+
+function closeEditor() {
+    els.modalBackdrop.hidden = true;   // hide
+    els.modalBackdrop.setAttribute('aria-hidden', 'true');
 }
 
 function closeEditor() {
