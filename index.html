@@ -129,7 +129,7 @@
           <div class="field"><label>Song title (Romaji)</label><input name="song_title_romaji" /></div>
           <div class="field"><label>Song title (Original)</label><input name="song_title_original" /></div>
         </div>
-        <div class="notice">Tip: Leave both song title fields blank to automatically mark this entry as Unidentified.</div>
+        <div class="notice tip">Tip: Leave both song title fields blank to automatically mark this entry as Unidentified.</div>
         <div class="grid-3">
           <div class="field"><label>Artist (Romaji)</label><input name="artist_romaji" /></div>
           <div class="field"><label>Artist (Original)</label><input name="artist_original" /></div>
@@ -143,22 +143,28 @@
           <div class="field"><label>Arranger (Original)</label><input name="arranger_original" /></div>
           <div class="field"><label>—</label><span class="notice">Leave blank if unknown</span></div>
         </div>
-        
         <h4>Status</h4>
-        <div class="grid">
-          <div class="field">
-            <label>Clean available?</label>
-            <select name="clean_available">
-              <option value="true">true</option>
-              <option value="false">false</option>
-            </select>
+        <div class="grid status-two-col">
+          <!-- Left column: stack Clean + Issues -->
+          <div class="stack">
+            <div class="field">
+              <label>Clean available?</label>
+              <select name="clean_available">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Issues (comma-separated tags)</label>
+              <input name="issues" placeholder="needs_id, needs_romaji" />
+            </div>
           </div>
-        </div>
         
-        <div class="grid">
-          <div class="field"><label>Issues (comma-separated tags)</label><input name="issues"
-              placeholder="needs_id, needs_romaji" /></div>
-          <div class="field"><label>Notes</label><textarea name="notes" placeholder="Context, scene, etc."></textarea></div>
+          <!-- Right column: Notes -->
+          <div class="field field-notes">
+            <label>Notes</label>
+            <textarea name="notes" placeholder="Context, scene, etc."></textarea>
+          </div>
         </div>
 
         <div class="modal-actions">

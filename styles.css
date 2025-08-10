@@ -208,6 +208,11 @@ footer {
     font-size: 12px;
 }
 
+.notice.tip {
+  display: block;
+  margin: 0 0 10px; /* matches .grid / .grid-3 gap = 10px */
+}
+
 /* Modal */
 .modal-backdrop {
     position: fixed;
@@ -301,4 +306,25 @@ footer {
 
 thead th {
     background-clip: padding-box;
+}
+
+/* Stack fields vertically on the left of Status row */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* same rhythm as your grid gaps */
+}
+
+/* Make Notes feel intentional and comfortable to type in */
+.field-notes textarea {
+  min-height: 140px;            /* taller by default */
+  line-height: 1.4;
+  resize: vertical;             /* let users expand if needed */
+}
+
+/* Clearer focus ring for textareas */
+.field textarea:focus {
+  outline: none;
+  border-color: #2b3550;
+  box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15);
 }
