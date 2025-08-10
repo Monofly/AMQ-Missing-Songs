@@ -105,13 +105,13 @@ export default {
             // optional compatibility
             const expectedNoOrigin = await deriveCsrfFromToken(gh, 'no-origin');
             return header === expectedNoOrigin;
-            }
+        }
 
         const reqOrigin = req.headers.get('Origin') || '';
         const corsBase = {
             // Reflect trusted origin; otherwise fall back to prod
             'Access-Control-Allow-Origin': isAllowedOriginStr(reqOrigin) ? reqOrigin : PROD,
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, HEAD'
             'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token, X-CSRF-Token',
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '86400',
@@ -461,7 +461,7 @@ export default {
             if (!Array.isArray(content)) return json({ error: 'Invalid content (expected array)' }, 400, cors);
 
             for (const item of content) {
-                if (item.ann_url && !isAllowedUrl(item.ann_url, ['www.animenewsnetwork.com'])) {
+                if (item.ann_url && !isAllowedUrl(item.ann_url, ['www.animenewsnetwork.com', 'animenewsnetwork.com'])) {
                     return json({ error: 'Invalid ann_url' }, 400, cors);
                 }
                 if (item.mal_url && !isAllowedUrl(item.mal_url, ['myanimelist.net'])) {
