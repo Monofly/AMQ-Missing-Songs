@@ -293,8 +293,12 @@ footer {
 .toolbar {
     position: sticky;
     top: 0;
-    z-index: 20; /* above table head */
-    background: linear-gradient(to bottom, var(--bg) 70%, transparent);
-    padding: 12px 0; /* keep the nice breathing space */
+    z-index: 100; /* safely above table head */
+    background: var(--bg); /* solid to avoid peek-through */
+    padding: 12px 0;
+    box-shadow: 0 2px 0 #1f2430; /* subtle divider line */
 }
 
+thead th {
+    background-clip: padding-box;
+}
