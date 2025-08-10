@@ -88,6 +88,16 @@ function parseTimeToSeconds(t) {
     return Number.POSITIVE_INFINITY;
 }
 
+function durationSeconds(start, end) {
+    const s = parseTimeToSeconds(start);
+    const e = parseTimeToSeconds(end);
+    // Only compute if both times are valid and end >= start.
+    if (!Number.isFinite(s) || !Number.isFinite(e)) return '';
+    const d = e - s;
+    if (!Number.isFinite(d) || d < 0) return '';
+    return `${d}s`;
+}
+
 // Consistent “complete” definition used by filters and tags
 function isComplete(it) {
     const hasArtist = !isEmpty(it.artist_romaji) || !isEmpty(it.artist_original);
@@ -215,6 +225,7 @@ function renderRows(items) {
         const issues = (Array.isArray(it.issues) && it.issues.length) ? `<div class="mono">Issues: ${it.issues.map(escapeHtml).join(', ')}</div>` : '';
         const ep = isEmpty(it.episode) ? '—' : escapeHtml(String(it.episode));
         const time = timeRange(it.time_start, it.time_end);
+        const dur = durationSeconds(it.time_start, it.time_end);
         const idx = it._index; // stable index we attach during normalization
         const rowActionsAnime = isAdmin ? `
           <div class="row-actions">
@@ -231,7 +242,7 @@ function renderRows(items) {
           <td>
             ${displayTitle(it.anime_en, it.anime_romaji)}
             <div class="mono">${it.season || '—'} ${it.year || '—'} • Ep ${ep}</div>
-            <div class="mono">${time}</div>
+            <div class="mono">${time}${dur ? `, ${dur}` : ''}</div>
             ${rowActionsAnime}
           </td>
           <td>
