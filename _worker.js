@@ -103,7 +103,7 @@ export default {
             // Reflect trusted origin; otherwise fall back to prod
             'Access-Control-Allow-Origin': isAllowedOriginStr(reqOrigin) ? reqOrigin : PROD,
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token',
+            'Access-Control-Allow-Headers': 'content-type, accept, x-csrf-token, X-CSRF-Token',
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '86400',
             'Vary': 'Origin'
@@ -320,59 +320,100 @@ export default {
         async function getContent(cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
             const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
 
-            // 1) Try CDN cache first
+            // 0) In-memory helpers (per runtime instance)
+            const etagStore = (globalThis.__etagStore ??= new Map());
+            const bodyStore = (globalThis.__bodyStore ??= new Map());
+
+            // 1) Try CDN cache first (fast path)
             const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
             const cached = await caches.default.match(cacheKey);
             if (cached) {
-                // Return cached response (fast), still sets proper CORS + security headers
                 const body = await cached.text();
                 return json(JSON.parse(body), 200, cors, {
                     'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
                 });
             }
 
-            // 2) Use ETag to minimize GitHub bandwidth (optional best-effort)
-            const etagStore = (globalThis.__etagStore ??= new Map());
+            // 2) Conditional request to GitHub with ETag
             const prevEtag = etagStore.get(apiUrl);
+            const headers = new Headers({ 'Accept': 'application/vnd.github.v3.raw' });
+            if (prevEtag) headers.set('If-None-Match', prevEtag);
 
-            try {
-                const headers = new Headers({ 'Accept': 'application/vnd.github.v3.raw' });
-                if (prevEtag) headers.set('If-None-Match', prevEtag);
+            const res = await fetch(apiUrl, { headers, cache: 'no-store' });
 
-                const res = await ghFetch(apiUrl, { headers, cache: 'no-store' });
+            // 304 = Not Modified. Use cache/memory fallback; if empty, do one unconditional fetch.
+            if (res.status === 304) {
+                // 2a) Try CDN cache again (another POP might have warmed it)
+                const stale = await caches.default.match(cacheKey);
+                if (stale) {
+                    const body = await stale.text();
+                    return json(JSON.parse(body), 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                }
 
-                // 200 OK with new content
-                const text = await res.text();
-                let parsed = [];
-                try { parsed = JSON.parse(text); } catch { parsed = []; }
+                // 2b) Try in-memory backup
+                if (bodyStore.has(apiUrl)) {
+                    const mem = bodyStore.get(apiUrl);
+                    return json(mem, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
+                }
 
-                // Update ETag
-                const newEtag = res.headers.get('ETag');
-                if (newEtag) etagStore.set(apiUrl, newEtag);
+                // 2c) Last-resort: refetch without If-None-Match to get the body
+                const res2 = await fetch(apiUrl, {
+                    headers: new Headers({ 'Accept': 'application/vnd.github.v3.raw' }),
+                    cache: 'no-store'
+                });
+                if (!res2.ok) {
+                    const text2 = await res2.text().catch(() => '');
+                    return json({ error: 'Failed to load content: GitHub ' + res2.status + ': ' + text2 }, 500, cors);
+                }
 
-                // 3) Put into CDN cache for 60s (serve stale up to 5 min)
-                const toCache = new Response(JSON.stringify(parsed), {
+                const text2 = await res2.text();
+                let parsed2 = [];
+                try { parsed2 = JSON.parse(text2); } catch { parsed2 = []; }
+
+                const newEtag2 = res2.headers.get('ETag');
+                if (newEtag2) etagStore.set(apiUrl, newEtag2);
+
+                // store in memory and CDN cache
+                bodyStore.set(apiUrl, parsed2);
+                const toCache2 = new Response(JSON.stringify(parsed2), {
                     status: 200,
                     headers: {
                         'Content-Type': 'application/json',
                         'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
                     }
                 });
-                await caches.default.put(cacheKey, toCache.clone());
+                await caches.default.put(cacheKey, toCache2.clone());
 
-                return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
-
-            } catch (e) {
-                // If GitHub returned 304 Not Modified, we can reuse stale cache
-                if (String(e.message || e).includes('304')) {
-                    const stale = await caches.default.match(cacheKey);
-                    if (stale) {
-                        const body = await stale.text();
-                        return json(JSON.parse(body), 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
-                    }
-                }
-                return json({ error: 'Failed to load content: ' + e.message }, 500, cors);
+                return json(parsed2, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
             }
+
+            // Any non-2xx, non-304 => error
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                return json({ error: 'Failed to load content: GitHub ' + res.status + ': ' + text }, 500, cors);
+            }
+
+            // 200 OK with fresh content
+            const text = await res.text();
+            let parsed = [];
+            try { parsed = JSON.parse(text); } catch { parsed = []; }
+
+            // Update ETag and memory backup
+            const newEtag = res.headers.get('ETag');
+            if (newEtag) etagStore.set(apiUrl, newEtag);
+            bodyStore.set(apiUrl, parsed);
+
+            // Put into CDN cache (serve stale up to 5 min)
+            const toCache = new Response(JSON.stringify(parsed), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'public, max-age=60, stale-while-revalidate=300'
+                }
+            });
+            await caches.default.put(cacheKey, toCache.clone());
+
+            return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' });
         }
 
         function isAllowedUrl(s, hosts) {
@@ -430,6 +471,14 @@ export default {
             try {
                 const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
                 await caches.default.delete(cacheKey);
+            } catch { }
+            // Also clear in-memory ETag/body so next read refetches
+            try {
+                const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
+                const etagStore = (globalThis.__etagStore ??= new Map());
+                const bodyStore = (globalThis.__bodyStore ??= new Map());
+                etagStore.delete(apiUrl);
+                bodyStore.delete(apiUrl);
             } catch { }
             return json({ ok: true, content: update?.content }, 200, cors);
         }
