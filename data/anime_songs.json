@@ -72,6 +72,30 @@
     "notes": "Timestamp for Kuwahara Yuki ver. Not the same timestamps for all versions. Members of the artist group are: Ichinose Koharu, Rokuhoshi Ellie, Kafuu Sayaka, Takanashi Ruu"
   },
   {
+    "anime_en": "",
+    "anime_romaji": "Nukitashi the Animation",
+    "year": 2025,
+    "season": "Summer",
+    "type": "Insert",
+    "song_title_romaji": "",
+    "song_title_original": "",
+    "artist_romaji": "",
+    "artist_original": "",
+    "composer_romaji": "",
+    "composer_original": "",
+    "arranger_romaji": "",
+    "arranger_original": "",
+    "episode": "4",
+    "time_start": "13:26",
+    "time_end": "14:20",
+    "unidentified": true,
+    "clean_available": true,
+    "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=31890",
+    "mal_url": "https://myanimelist.net/anime/57969",
+    "issues": [],
+    "notes": ""
+  },
+  {
     "anime_en": "Silent Möbius: The Motion Picture 2",
     "anime_romaji": "Silent Möbius: The Motion Picture 2",
     "year": 1992,
@@ -120,8 +144,8 @@
     "notes": ""
   },
   {
-    "anime_en": "",
-    "anime_romaji": "Nukitashi the Animation",
+    "anime_en": "Dealing with Mikadono Sisters Is a Breeze",
+    "anime_romaji": "Mikadono San Shimai wa Angai, Choroi",
     "year": 2025,
     "season": "Summer",
     "type": "Insert",
@@ -133,14 +157,14 @@
     "composer_original": "",
     "arranger_romaji": "",
     "arranger_original": "",
-    "episode": "4",
-    "time_start": "13:26",
-    "time_end": "14:20",
+    "episode": "5",
+    "time_start": "19:53",
+    "time_end": "20:21",
     "unidentified": true,
-    "clean_available": true,
-    "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=31890",
-    "mal_url": "https://myanimelist.net/anime/57969",
+    "clean_available": false,
+    "ann_url": "https://www.animenewsnetwork.com/encyclopedia/anime.php?id=32864",
+    "mal_url": "https://myanimelist.net/anime/59207",
     "issues": [],
-    "notes": ""
+    "notes": "Need to check lyrics"
   }
 ]
