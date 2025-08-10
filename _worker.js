@@ -41,6 +41,11 @@ export default {
             return isAllowedOriginStr(originFromRef(req));
         }
 
+        function secFetchSameSite(req) {
+            const s = (req.headers.get('Sec-Fetch-Site') || '').toLowerCase();
+            return s === 'same-origin' || s === 'same-site';
+        }
+
         function requireJson(req) {
             return (req.headers.get('Content-Type') || '').toLowerCase().includes('application/json');
         }
@@ -144,8 +149,22 @@ export default {
         }
 
         // Reject other origins for state-changing or cookie-bearing requests
-        const isSafeRead = req.method === 'GET' && url.pathname === '/content';
+        const SAFE_GETS = new Set(['/content', '/auth/me', '/csrf']);
+        const isSafeRead = req.method === 'GET' && SAFE_GETS.has(url.pathname);
         const hasCookie = !!req.headers.get('Cookie');
+
+        // Treat requests as allowed if:
+        // - Origin is explicitly trusted
+        // - or Referer origin is trusted
+        // - or the browser says it's same-origin/site (Sec-Fetch-Site)
+        function isFromAllowedSite(req) {
+            const origin = req.headers.get('Origin') || '';
+            if (origin) return isAllowedOriginStr(origin);
+            const refOrigin = originFromRef(req);
+            if (refOrigin) return isAllowedOriginStr(refOrigin);
+            if (secFetchSameSite(req)) return true;
+            return false;
+        }
 
         if (!isSafeRead && ((req.method !== 'GET' && req.method !== 'HEAD') || hasCookie)) {
             if (!isFromAllowedSite(req)) {
