@@ -45,11 +45,6 @@ h1 {
     display: grid;
     grid-template-columns: 1fr repeat(4, minmax(140px, 220px));
     gap: 12px;
-    position: sticky;
-    top: 0;
-    background: linear-gradient(to bottom, var(--bg) 70%, transparent);
-    padding: 12px 0;
-    z-index: 10;
 }
 
 input[type="search"],
@@ -66,6 +61,7 @@ input::placeholder {
     color: #72809a;
 }
 
+/* Keep the count looking clean when sticky */
 .count {
     margin: 8px 0 16px;
     color: var(--muted);
@@ -88,13 +84,15 @@ td {
     vertical-align: top;
 }
 
+/* Table head sticks below the toolbar. This value is set by JS */
 th {
     position: sticky;
-    top: 76px;
+    top: var(--toolbar-height, 0px);
     background: var(--card);
     text-align: left;
     font-weight: 600;
     color: var(--muted);
+    z-index: 10; /* stays under the toolbar */
 }
 
 tbody tr:hover {
@@ -286,12 +284,17 @@ footer {
         grid-template-columns: 1fr 1fr;
     }
 
-    th {
-        top: 164px;
-    }
-
     .grid,
     .grid-3 {
         grid-template-columns: 1fr;
     }
 }
+
+.toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20; /* above table head */
+    background: linear-gradient(to bottom, var(--bg) 70%, transparent);
+    padding: 12px 0; /* keep the nice breathing space */
+}
+
