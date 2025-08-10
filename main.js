@@ -1,9 +1,9 @@
 // ==== CONFIG ====
 const CONFIG = {
-  OWNER: 'Monofly',
-  REPO: 'AMQ-Missing-Songs',
-  BRANCH: 'main',
-  CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
+    OWNER: 'Monofly',
+    REPO: 'AMQ-Missing-Songs',
+    BRANCH: 'main',
+    CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
 };
 // ===============
 
@@ -28,6 +28,14 @@ const els = {
     cancelBtn: document.getElementById('cancelBtn'),
     saveBtn: document.getElementById('saveBtn')
 };
+
+function setToolbarHeight() {
+    const toolbar = document.getElementById('toolbar');
+    if (!toolbar) return;
+    // Use offsetHeight (includes padding/borders)
+    const h = toolbar.offsetHeight || 0;
+    document.documentElement.style.setProperty('--toolbar-height', `${h}px`);
+}
 
 // Helper to build same-origin API URLs
 const api = (p) => p;
@@ -201,7 +209,8 @@ function renderRows(items) {
         return `<tr>
           <td>
             ${displayTitle(it.anime_en, it.anime_romaji)}
-            <div class="mono">${it.season || '—'} ${it.year || '—'} • Ep ${ep} • ${time}</div>
+            <div class="mono">${it.season || '—'} ${it.year || '—'} • Ep ${ep}</div>
+            <div class="mono">${time}</div>
             ${rowActionsAnime}
           </td>
           <td>
@@ -276,6 +285,9 @@ async function init() {
         await restoreSession();
         await ensureCsrf();
         applyFilters();
+        // After first render, measure toolbar to set sticky header offset
+        setToolbarHeight();
+        window.addEventListener('resize', setToolbarHeight);
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
     }
@@ -315,6 +327,8 @@ function updateAdminVisibility() {
         els.logoutBtn.style.display = 'none';
         els.addBtn.style.display = 'none';
     }
+    // Recalculate sticky offset if the toolbar height changed
+    setToolbarHeight();
 }
 
 async function ensureCsrf() {
@@ -437,10 +451,10 @@ async function verifyAdmin() {
 }
 
 function b64EncodeUnicode(str) {
-  const bytes = new TextEncoder().encode(str);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
 }
 
 async function commitJson(newArray, commitMessage) {
