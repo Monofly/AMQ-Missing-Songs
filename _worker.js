@@ -30,15 +30,15 @@ export default {
             return false;
         }
 
+        function binderFromRequest(req) {
+            const origin = req.headers.get('Origin') || '';
+            if (origin) return origin;
+            try { return new URL(req.url).origin; } catch { return 'no-origin'; }
+        }
+
         function originFromRef(req) {
             const ref = req.headers.get('Referer') || '';
             try { return ref ? new URL(ref).origin : ''; } catch { return ''; }
-        }
-
-        function isFromAllowedSite(req) {
-            const origin = req.headers.get('Origin') || '';
-            if (origin) return isAllowedOriginStr(origin);
-            return isAllowedOriginStr(originFromRef(req));
         }
 
         function secFetchSameSite(req) {
@@ -97,11 +97,15 @@ export default {
             if (!gh) return false;
             const header = req.headers.get('X-CSRF-Token') || '';
             if (!header) return false;
-            const origin = req.headers.get('Origin') || originFromRef(req) || '';
-            const binder = origin || 'no-origin';
+
+            const binder = binderFromRequest(req);
             const expected = await deriveCsrfFromToken(gh, binder);
-            return header === expected;
-        }
+            if (header === expected) return true;
+
+            // optional compatibility
+            const expectedNoOrigin = await deriveCsrfFromToken(gh, 'no-origin');
+            return header === expectedNoOrigin;
+            }
 
         const reqOrigin = req.headers.get('Origin') || '';
         const corsBase = {
@@ -243,8 +247,8 @@ export default {
         async function csrfEndpoint(req, cors) {
             const gh = getCookie(req, 'gh_at');
             if (!gh) return json({ error: 'Unauthorized' }, 401, cors);
-            const origin = req.headers.get('Origin') || originFromRef(req) || '';
-            const csrf = await deriveCsrfFromToken(gh, origin || 'no-origin');
+            const binder = binderFromRequest(req);
+            const csrf = await deriveCsrfFromToken(gh, binder);
             return json({ csrf }, 200, cors);
         }
 
@@ -313,7 +317,7 @@ export default {
             }).then(r => r.json());
 
             const origin = req.headers.get('Origin') || originFromRef(req) || '';
-            const csrf = await deriveCsrfFromToken(token, origin || 'no-origin');
+            const csrf = await deriveCsrfFromToken(token, binderFromRequest(req));
 
             return new Response(JSON.stringify({ ok: true, user, csrf }), { status: 200, headers });
         }
