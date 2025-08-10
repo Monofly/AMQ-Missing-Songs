@@ -318,8 +318,10 @@ async function init() {
 function wireAdminBar() {
     els.loginBtn.addEventListener('click', loginWithGitHub);
     els.logoutBtn.addEventListener('click', async () => {
+        await ensureCsrf();
         await fetch(api('/logout'), {
             method: 'POST',
+            headers: { 'X-CSRF-Token': CSRF },
             credentials: 'include'
         });
         currentUser = null;
@@ -352,19 +354,19 @@ function updateAdminVisibility() {
 }
 
 async function ensureCsrf() {
-    if (CSRF) return CSRF;
-    try {
-        const r = await fetch(api('/csrf'), {
-            method: 'GET',
-            credentials: 'include',
-            headers: { 'Accept': 'application/json' }
-        });
-        if (r.ok) {
-            const j = await r.json();
-            CSRF = j.csrf || '';
-        }
-    } catch { }
-    return CSRF;
+  if (CSRF) return CSRF;
+  try {
+    const r = await fetch(api('/csrf'), {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (r.ok) {
+      const j = await r.json();
+      if (j.csrf) CSRF = j.csrf;
+    }
+  } catch { }
+  return CSRF;
 }
 
 function safeHref(href, allowedHosts = []) {
