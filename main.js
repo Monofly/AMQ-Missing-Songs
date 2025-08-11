@@ -1,8 +1,5 @@
 // ==== CONFIG ====
 const CONFIG = {
-    OWNER: 'Monofly',
-    REPO: 'AMQ-Missing-Songs',
-    BRANCH: 'main',
     CLIENT_ID: 'Ov23ctADgidCYeXxj8mv'
 };
 // ===============
@@ -507,13 +504,6 @@ async function loginWithGitHub() {
 async function verifyAdmin() {
     await restoreSession();
     return isAdmin;
-}
-
-function b64EncodeUnicode(str) {
-    const bytes = new TextEncoder().encode(str);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
 }
 
 async function commitJson(newArray, commitMessage) {

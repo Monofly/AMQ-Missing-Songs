@@ -202,7 +202,7 @@ export default {
 
         // App config (optionally make these environment variables in Pages settings)
         const OWNER = env.OWNER || 'Monofly';
-        const REPO = env.REPO || 'AMQ-Missing-Songs';
+        const REPO = env.REPO || 'AMQ-Missing-Songs-Data';
         const BRANCH = env.BRANCH || 'main';
         const CONTENT_PATH = env.CONTENT_PATH || 'data/anime_songs.json';
 
