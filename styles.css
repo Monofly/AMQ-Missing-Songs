@@ -347,3 +347,33 @@ thead th {
 .is-open {
     display: flex !important;
 }
+
+.pager {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0 24px;
+    /* keep it visually consistent with toolbar/table spacing */
+    flex-wrap: wrap;
+}
+
+.pager .page-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pager input[type="number"] {
+    width: 70px;
+    padding: 8px 10px;
+    border: 1px solid #263047;
+    border-radius: 8px;
+    background: #0c0f17;
+    color: var(--text);
+    font-size: 14px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

@@ -47,7 +47,7 @@
         </select>
         <select id="status">
           <option value="all">All statuses</option>
-          <option value="complete">Complete</option>
+          <option value="no_issues">No issues</option>
           <option value="unidentified">Unidentified</option>
           <option value="missing_clean">Missing clean</option>
           <option value="missing_artist">Missing artist</option>
@@ -68,7 +68,6 @@
         </span>
       </div>
     </div>
-
     <table class="table" aria-describedby="count">
       <thead>
         <tr>
@@ -81,6 +80,18 @@
       </thead>
       <tbody id="rows"></tbody>
     </table>
+    <div class="pager" id="pager" hidden>
+      <button class="btn" id="prevPageBtn" disabled>Back</button>
+
+      <div class="page-control">
+        <input id="pageInput" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="Page" />
+        <span class="muted">/ <span id="pageTotal">1</span></span>
+      </div>
+
+      <button class="btn" id="nextPageBtn" disabled>Next</button>
+
+      <span class="muted" id="pageInfo"></span>
+    </div>
   </main>
 
   <footer>

@@ -23,7 +23,13 @@ const els = {
     modalTitle: document.getElementById('modalTitle'),
     modalNotice: document.getElementById('modalNotice'),
     cancelBtn: document.getElementById('cancelBtn'),
-    saveBtn: document.getElementById('saveBtn')
+    saveBtn: document.getElementById('saveBtn'),
+    pager: document.getElementById('pager'),
+    prevPageBtn: document.getElementById('prevPageBtn'),
+    nextPageBtn: document.getElementById('nextPageBtn'),
+    pageInput: document.getElementById('pageInput'),
+    pageTotal: document.getElementById('pageTotal'),
+    pageInfo: document.getElementById('pageInfo')
 };
 
 function show(el) { if (el) el.hidden = false; }
@@ -45,6 +51,10 @@ let isAdmin = false;
 let currentUser = null;
 let CSRF = '';
 const CONTENT_PATH = 'data/anime_songs.json';
+
+const PAGE_SIZE = 50;
+let currentPage = 1;
+let lastFiltered = [];
 
 function watchToolbarHeight() {
     const toolbar = document.getElementById('toolbar');
@@ -140,7 +150,7 @@ function statusTags(item) {
     }
 
     if (Array.isArray(item.issues) && item.issues.length) tags.push({ cls: 'warn', text: 'Other issues' });
-    if (isComplete(item) && !tags.length) tags.push({ cls: 'ok', text: 'Complete' });
+    if (isComplete(item) && !tags.length) tags.push({ cls: 'ok', text: 'No issues' });
     return tags;
 }
 
@@ -197,7 +207,7 @@ function applyFilters() {
                 if (status === 'missing_ann' && !!it.ann_url) return false;
                 if (status === 'missing_mal' && !!it.mal_url) return false;
                 if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
-                if (status === 'complete' && !isComplete(it)) return false;  // NEW
+                if (status === 'no_issues' && !isComplete(it)) return false;
             }
 
             if (q) {
@@ -216,13 +226,17 @@ function applyFilters() {
         })
         .sort(compareItems);
 
-    renderRows(filtered);
+    lastFiltered = filtered;
+    currentPage = 1; // reset on every search/filter change
+    renderPage();
 }
 
-function renderRows(items) {
-    const adminClass = isAdmin ? 'admin-on' : '';
+function renderRows(items, totalFilteredCount = items.length) {
     document.body.classList.toggle('admin-on', isAdmin);
-    els.count.textContent = `${items.length} result${items.length === 1 ? '' : 's'} • ${DATA.length} total`;
+
+    // Show the filtered count, not just current page count:
+    els.count.textContent = `${totalFilteredCount} result${totalFilteredCount === 1 ? '' : 's'} • ${DATA.length} total`;
+
     els.rows.innerHTML = items.map(it => {
         const tags = statusTags(it).map(t => `<span class="pill ${t.cls}">${t.text}</span>`).join(' ');
         const issues = (Array.isArray(it.issues) && it.issues.length) ? `<div class="mono">Issues: ${it.issues.map(escapeHtml).join(', ')}</div>` : '';
@@ -275,6 +289,52 @@ function renderRows(items) {
     }
 }
 
+function totalPages() {
+    return Math.max(1, Math.ceil((lastFiltered.length || 0) / PAGE_SIZE));
+}
+
+function clampPage(n) {
+    return Math.min(totalPages(), Math.max(1, n || 1));
+}
+
+function updatePagerUI() {
+    const tp = totalPages();
+    const hasMany = lastFiltered.length > PAGE_SIZE;
+
+    // Show/hide pager depending on result size
+    if (hasMany) {
+        els.pager.hidden = false;
+        els.pageTotal.textContent = String(tp);
+        els.pageInput.value = String(currentPage);
+
+        // Disable at bounds
+        els.prevPageBtn.disabled = currentPage <= 1;
+        els.nextPageBtn.disabled = currentPage >= tp;
+
+        // Optional info: "Showing 51–100 of 263"
+        const start = (currentPage - 1) * PAGE_SIZE + 1;
+        const end = Math.min(currentPage * PAGE_SIZE, lastFiltered.length);
+        els.pageInfo.textContent = `Showing ${start}–${end} of ${lastFiltered.length}`;
+    } else {
+        els.pager.hidden = true;
+        els.pageInfo.textContent = '';
+    }
+}
+
+function renderPage() {
+    const tp = totalPages();
+    currentPage = clampPage(currentPage);
+    const startIdx = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = lastFiltered.slice(startIdx, startIdx + PAGE_SIZE);
+    renderRows(pageItems, lastFiltered.length);
+    updatePagerUI();
+}
+
+function goToPage(n) {
+    currentPage = clampPage(n);
+    renderPage();
+}
+
 function populateYearOptions(items) {
     const years = uniqueYears(items);
     document.getElementById('year').innerHTML =
@@ -318,6 +378,22 @@ async function init() {
         populateYearOptions(DATA);
         [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
         wireAdminBar();
+
+        // Pager controls
+        if (els.prevPageBtn && els.nextPageBtn && els.pageInput) {
+            els.prevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
+            els.nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
+
+                const tryInputPage = () => {
+                const n = Number.parseInt(els.pageInput.value, 10);
+                if (!Number.isFinite(n)) return;
+                goToPage(n); // clampPage will fix <=0 => 1 and >max => max
+            };
+            els.pageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') tryInputPage();
+            });
+            els.pageInput.addEventListener('blur', tryInputPage);
+        }
 
         // Make sure toolbar matches the default (not signed in) state immediately:
         updateAdminVisibility();
@@ -572,7 +648,7 @@ function buildPresetFromShow(it) {
         episode: '',
         time_start: '',
         time_end: '',
-        clean_available: true,
+        clean_available: false,
         ann_url: it.ann_url || '',
         mal_url: it.mal_url || '',
         issues: [],
@@ -590,7 +666,7 @@ function openEditor(index, preset) {
         const it = DATA[index];
         fillForm(it);
     } else {
-        const baseDefaults = { season: 'Winter', type: 'OP', clean_available: true, issues: [] };
+        const baseDefaults = { season: 'Winter', type: 'OP', clean_available: false, issues: [] };
         fillForm({ ...baseDefaults, ...(preset || {}) });
     }
 
