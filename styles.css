@@ -66,15 +66,37 @@ input::placeholder {
     color: #72809a;
 }
 
-/* Keep the count looking clean when sticky */
+/* Count row container */
 .count {
     margin: 8px 0 16px;
     color: var(--muted);
     font-size: 13px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
     gap: 8px;
+    /* remove or override space-between to avoid odd spacing */
+    justify-content: initial;
+}
+
+/* Left text can expand if needed */
+.count-left {
+    flex: 0 1 auto;
+}
+
+/* Center pager stays compact and centers itself between left/right */
+.count-middle {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    margin: 0 auto;
+    /* centers the middle block */
+}
+
+/* Admin stays flush-right no matter what */
+.count-right {
+    flex: 0 0 auto;
+    margin-left: auto;
+    /* pushes it to the far right */
 }
 
 .table {
@@ -380,18 +402,6 @@ thead th {
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-}
-
-/* Count row: left text, centered pager, right admin bar */
-.count-left,
-.count-right {
-    flex: 1 1 0;
-}
-
-.count-middle {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: center;
 }
 
 /* Make the top pager more compact */
