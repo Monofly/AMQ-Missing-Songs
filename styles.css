@@ -162,6 +162,10 @@ tbody tr:hover {
     line-height: 1.35;
 }
 
+.preline {
+    white-space: pre-line;
+}
+
 footer {
     padding: 40px 16px;
     color: var(--muted);
@@ -376,4 +380,28 @@ thead th {
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+/* Count row: left text, centered pager, right admin bar */
+.count-left,
+.count-right {
+    flex: 1 1 0;
+}
+
+.count-middle {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+}
+
+/* Make the top pager more compact */
+.pager.mini {
+    padding: 0;
+}
+
+/* Optional: shrink the mini pager inputs a touch on small screens */
+@media (max-width: 600px) {
+    .pager.mini .page-control input[type="number"] {
+        width: 56px;
+    }
 }

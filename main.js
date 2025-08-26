@@ -29,7 +29,12 @@ const els = {
     nextPageBtn: document.getElementById('nextPageBtn'),
     pageInput: document.getElementById('pageInput'),
     pageTotal: document.getElementById('pageTotal'),
-    pageInfo: document.getElementById('pageInfo')
+    pageInfo: document.getElementById('pageInfo'),
+    topPager: document.getElementById('topPager'),
+    topPrevPageBtn: document.getElementById('topPrevPageBtn'),
+    topNextPageBtn: document.getElementById('topNextPageBtn'),
+    topPageInput: document.getElementById('topPageInput'),
+    topPageTotal: document.getElementById('topPageTotal')
 };
 
 function show(el) { if (el) el.hidden = false; }
@@ -267,7 +272,7 @@ function renderRows(items, totalFilteredCount = items.length) {
             <div class="mono">${tags}</div>
             ${rowActionsSong}
           </td>
-          <td>${personBlock(it)}${it.notes ? `<div class="mono">Notes: ${escapeHtml(it.notes)}</div>` : ''}${issues}</td>
+          <td>${personBlock(it)}${it.notes ? `<div class="mono preline">Notes: ${escapeHtml(it.notes)}</div>` : ''}${issues}</td>
           <td><span class="pill type">${escapeHtml(it.type || '—')}</span></td>
           <td>${linkOrDash(it.ann_url, 'ANN')} · ${linkOrDash(it.mal_url, 'MAL')}</td>
         </tr>`;
@@ -301,24 +306,48 @@ function updatePagerUI() {
     const tp = totalPages();
     const hasMany = lastFiltered.length > PAGE_SIZE;
 
-    // Show/hide pager depending on result size
-    if (hasMany) {
-        els.pager.hidden = false;
-        els.pageTotal.textContent = String(tp);
-        els.pageInput.value = String(currentPage);
+    // Helper to update one pager set
+    const setPager = (which) => {
+        if (!which) return;
+        const { wrapper, prev, next, input, total, info } = which;
 
-        // Disable at bounds
-        els.prevPageBtn.disabled = currentPage <= 1;
-        els.nextPageBtn.disabled = currentPage >= tp;
+        if (wrapper) wrapper.hidden = !hasMany;
+        if (!hasMany) {
+            if (info) info.textContent = '';
+            return;
+        }
 
-        // Optional info: "Showing 51–100 of 263"
-        const start = (currentPage - 1) * PAGE_SIZE + 1;
-        const end = Math.min(currentPage * PAGE_SIZE, lastFiltered.length);
-        els.pageInfo.textContent = `Showing ${start}–${end} of ${lastFiltered.length}`;
-    } else {
-        els.pager.hidden = true;
-        els.pageInfo.textContent = '';
-    }
+        if (total) total.textContent = String(tp);
+        if (input) input.value = String(currentPage);
+        if (prev) prev.disabled = currentPage <= 1;
+        if (next) next.disabled = currentPage >= tp;
+
+        if (info) {
+            const start = (currentPage - 1) * PAGE_SIZE + 1;
+            const end = Math.min(currentPage * PAGE_SIZE, lastFiltered.length);
+            info.textContent = `Showing ${start}–${end} of ${lastFiltered.length}`;
+        }
+    };
+
+    // Bottom pager
+    setPager({
+        wrapper: els.pager,
+        prev: els.prevPageBtn,
+        next: els.nextPageBtn,
+        input: els.pageInput,
+        total: els.pageTotal,
+        info: els.pageInfo
+    });
+
+    // Top pager (no info line)
+    setPager({
+        wrapper: els.topPager,
+        prev: els.topPrevPageBtn,
+        next: els.topNextPageBtn,
+        input: els.topPageInput,
+        total: els.topPageTotal,
+        info: null
+    });
 }
 
 function renderPage() {
@@ -393,6 +422,22 @@ async function init() {
                 if (e.key === 'Enter') tryInputPage();
             });
             els.pageInput.addEventListener('blur', tryInputPage);
+        }
+
+        // Top pager controls
+        if (els.topPrevPageBtn && els.topNextPageBtn && els.topPageInput) {
+            els.topPrevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
+            els.topNextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
+
+            const tryTopInputPage = () => {
+                const n = Number.parseInt(els.topPageInput.value, 10);
+                if (!Number.isFinite(n)) return;
+                goToPage(n); // clampPage ensures bounds
+            };
+            els.topPageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') tryTopInputPage();
+            });
+            els.topPageInput.addEventListener('blur', tryTopInputPage);
         }
 
         // Make sure toolbar matches the default (not signed in) state immediately:

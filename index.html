@@ -58,8 +58,22 @@
       </section>
 
       <div class="count" id="count">
-        <span id="countText">Loading…</span>
-        <span class="admin" id="adminBar">
+        <span class="count-left">
+          <span id="countText">Loading…</span>
+        </span>
+
+        <div class="count-middle">
+          <div class="pager mini" id="topPager" hidden>
+            <button class="btn" id="topPrevPageBtn" disabled>Back</button>
+            <div class="page-control">
+              <input id="topPageInput" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="Page" />
+              <span class="muted">/ <span id="topPageTotal">1</span></span>
+            </div>
+            <button class="btn" id="topNextPageBtn" disabled>Next</button>
+          </div>
+        </div>
+
+        <span class="admin count-right" id="adminBar">
           <span id="loginStatus" class="notice">Not signed in</span>
           <button class="btn" id="loginBtn">Login</button>
           <button class="btn secondary" id="logoutBtn" hidden>Logout</button>
@@ -67,31 +81,30 @@
           <span class="notice" id="saveNotice" hidden></span>
         </span>
       </div>
-    </div>
-    <table class="table" aria-describedby="count">
-      <thead>
-        <tr>
-          <th style="width: 28%">Anime</th>
-          <th style="width: 30%">Song</th>
-          <th style="width: 26%">Credits</th>
-          <th style="width: 8%">Type</th>
-          <th style="width: 8%">Links</th>
-        </tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
-    <div class="pager" id="pager" hidden>
-      <button class="btn" id="prevPageBtn" disabled>Back</button>
+      <table class="table" aria-describedby="count">
+        <thead>
+          <tr>
+            <th style="width: 28%">Anime</th>
+            <th style="width: 30%">Song</th>
+            <th style="width: 26%">Credits</th>
+            <th style="width: 8%">Type</th>
+            <th style="width: 8%">Links</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="pager" id="pager" hidden>
+        <button class="btn" id="prevPageBtn" disabled>Back</button>
 
-      <div class="page-control">
-        <input id="pageInput" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="Page" />
-        <span class="muted">/ <span id="pageTotal">1</span></span>
+        <div class="page-control">
+          <input id="pageInput" type="number" min="1" step="1" value="1" inputmode="numeric" aria-label="Page" />
+          <span class="muted">/ <span id="pageTotal">1</span></span>
+        </div>
+
+        <button class="btn" id="nextPageBtn" disabled>Next</button>
+
+        <span class="muted" id="pageInfo"></span>
       </div>
-
-      <button class="btn" id="nextPageBtn" disabled>Next</button>
-
-      <span class="muted" id="pageInfo"></span>
-    </div>
   </main>
 
   <footer>
@@ -190,8 +203,8 @@
       </form>
     </div>
   </div>
-  <link rel="stylesheet" href="/styles.css?v=4" media="all">
-  <script src="/main.js?v=4" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=5" media="all">
+  <script src="/main.js?v=5" defer></script>
 </body>
 
 </html>
