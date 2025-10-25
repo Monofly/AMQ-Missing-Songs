@@ -500,8 +500,9 @@ async function init() {
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
-        // Fix any missing IDs in the remote data if admin
-        await fixMissingIdsIfAdmin();
+        // NOTE: previously auto-fixed missing IDs on load (caused surprise commits and reloads).
+        // We disable automatic commits here — admins can use the "Fix missing IDs" button manually.
+            // await fixMissingIdsIfAdmin();
 
         populateYearOptions(DATA);
 
@@ -594,7 +595,7 @@ async function init() {
             });
             DATA.sort(compareItems);
             DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
-            await fixMissingIdsIfAdmin();
+            // await fixMissingIdsIfAdmin();
             populateYearOptions(DATA);
             const saved = loadFilterState();
             setFilterState(saved);
@@ -664,20 +665,6 @@ function wireAdminBar() {
         if (!isAdmin) { alert('You are not authorized to add.'); return; }
         openEditor(null);
     });
-
-    els.fixIdsBtn = document.getElementById('fixIdsBtn');
-
-    if (els.fixIdsBtn) {
-        els.fixIdsBtn.addEventListener('click', async () => {
-            await restoreSession();
-            if (!isAdmin) { 
-                alert('You are not authorized to perform this action.'); 
-                return; 
-            }
-            // Run manual fix (will confirm)
-            await fixAllMissingIds();
-        });
-    }
 }
 
 function updateAdminVisibility() {
@@ -686,19 +673,16 @@ function updateAdminVisibility() {
         hide(els.loginBtn);
         show(els.logoutBtn);
         show(els.addBtn);
-        show(els.fixIdsBtn); // Add this line
     } else if (currentUser && !isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         hide(els.addBtn);
-        hide(els.fixIdsBtn); // Add this line
     } else {
         els.loginStatus.textContent = 'Not signed in';
         show(els.loginBtn);
         hide(els.logoutBtn);
         hide(els.addBtn);
-        hide(els.fixIdsBtn); // Add this line
     }
     setToolbarHeight();
 }
@@ -911,16 +895,7 @@ async function loginWithGitHub() {
             if (!isAdmin) {
                 alert('Signed in but you do not have write access to this repo.');
             } else {
-                // CHECK FOR MISSING IDs AND PROMPT TO FIX
                 await reloadLatestContent(); // Make sure we have latest data
-                const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
-                if (itemsWithoutIds.length > 0) {
-                    setTimeout(() => {
-                        if (confirm(`We found ${itemsWithoutIds.length} items without IDs. This may cause problems when editing or deleting.\n\nWould you like to automatically add IDs to these items now?`)) {
-                            fixAllMissingIds();
-                        }
-                    }, 1000);
-                }
             }
     
             applyFilters();
@@ -980,63 +955,6 @@ function ensurePersistentId(it) {
     const id = `${Date.now()}-${Math.abs(hash).toString(16)}-${rand}`;
     it.id = id;
     return id;
-}
-
-async function fixAllMissingIds() {
-    if (!isAdmin) {
-        alert('You must be logged in as admin to fix IDs.');
-        return;
-    }
-
-    const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
-    if (itemsWithoutIds.length === 0) {
-        alert('All items already have IDs!');
-        return;
-    }
-
-    if (!confirm(`This will add IDs to ${itemsWithoutIds.length} items that are missing them. Continue?`)) {
-        return;
-    }
-
-    try {
-        // Ensure each item has an ID (mutates DATA)
-        DATA.forEach(it => {
-            if (!it.id || it.id.trim() === '') ensurePersistentId(it);
-        });
-
-        // Build a clean copy of the array (remove client-only props like _index/_uid)
-        const allItems = DATA.map(({ _index, _uid, ...rest }) => rest);
-
-        await ensureCsrf();
-
-        const res = await fetch(api('/commit'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-Token': CSRF
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-                bulkUpdate: allItems,
-                message: `Fix: Add missing IDs to ${itemsWithoutIds.length} items`,
-                baseSha: DATA_SHA
-            })
-        });
-
-        if (!res.ok) {
-            const txt = await res.text().catch(() => '');
-            throw new Error(`Failed to save: ${res.status} ${txt}`);
-        }
-
-        const result = await res.json().catch(() => ({}));
-        if (result.sha) DATA_SHA = result.sha;
-
-        alert(`✅ Successfully added IDs to ${itemsWithoutIds.length} items! The page will now reload.`);
-        location.reload();
-    } catch (err) {
-        alert(`Failed to fix IDs: ${err.message || err}`);
-    }
 }
 
 async function fixMissingIdsIfAdmin() {
@@ -1173,6 +1091,14 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
         els.saveNotice.textContent = changeObj === null ? 'Deleted.' : 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
         
+        // Reload authoritative latest content to guarantee current user sees the committed data
+        try {
+            await reloadLatestContent();
+        } catch (e) {
+            // If reload failed, still return success so UI won't think it failed
+            console.warn('Reload after commit failed (non-fatal):', e);
+        }
+
         return { success: true };
     } catch (err) {
         els.saveNotice.classList.remove('saving');

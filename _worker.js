@@ -170,10 +170,10 @@ export default {
             // - Only self for everything you use
             const csp = [
                 "default-src 'self'",
-                "script-src 'self'",
+                "script-src 'self' https://static.cloudflareinsights.com",
                 "style-src 'self'",
                 "img-src 'self'",
-                "connect-src 'self'",
+                "connect-src 'self' https://static.cloudflareinsights.com",
                 "font-src 'self'",
                 "object-src 'none'",
                 "base-uri 'none'",
@@ -291,7 +291,18 @@ export default {
                 });
                 if (env.GH_READ_TOKEN) headers.set('Authorization', `Bearer ${env.GH_READ_TOKEN}`);
 
-                const res = await fetch(apiUrl, { headers, cache: 'no-store' });
+                // fetch with a tiny retry to handle transient gateway/timeouts
+                let res;
+                for (let attempt = 1; attempt <= 2; attempt++) {
+                    try {
+                        res = await fetch(apiUrl, { headers, cache: 'no-store' });
+                        break;
+                    } catch (e) {
+                        if (attempt === 2) throw e;
+                        // short backoff
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                }
                 if (!res.ok) {
                     const text = await res.text().catch(() => '');
                     return json({ error: 'Failed to load meta', source: 'github', status: res.status, detail: text || '' }, 500, corsBase);
