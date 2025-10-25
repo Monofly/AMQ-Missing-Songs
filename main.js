@@ -841,29 +841,6 @@ function wireAdminBar() {
         location.reload();
     });
 
-    // Add refresh button handler
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', async() => {
-            refreshBtn.disabled = true;
-            refreshBtn.textContent = 'Refreshing...';
-            try {
-                await reloadLatestContent();
-                refreshBtn.textContent = 'Refreshed!';
-                setTimeout(() => {
-                    refreshBtn.textContent = 'Refresh Data';
-                    refreshBtn.disabled = false;
-                }, 2000);
-            } catch (error) {
-                refreshBtn.textContent = 'Failed!';
-                setTimeout(() => {
-                    refreshBtn.textContent = 'Refresh Data';
-                    refreshBtn.disabled = false;
-                }, 2000);
-            }
-        });
-    }
-
     els.addBtn.addEventListener('click', async() => {
         await restoreSession();
         if (!isAdmin) {
@@ -875,29 +852,21 @@ function wireAdminBar() {
 }
 
 function updateAdminVisibility() {
-    const refreshBtn = document.getElementById('refreshBtn');
-
     if (currentUser && isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login}`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         show(els.addBtn);
-        if (refreshBtn)
-            show(refreshBtn);
     } else if (currentUser && !isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         hide(els.addBtn);
-        if (refreshBtn)
-            hide(refreshBtn);
     } else {
         els.loginStatus.textContent = 'Not signed in';
         show(els.loginBtn);
         hide(els.logoutBtn);
         hide(els.addBtn);
-        if (refreshBtn)
-            hide(refreshBtn);
     }
     setToolbarHeight();
 }
@@ -959,6 +928,25 @@ async function fetchRemoteSha() {
     } catch {
         return null;
     }
+}
+
+async function waitForRemoteShaChange(previousSha, { expectedSha = '', timeoutMs = 15000, intervalMs = 1200 } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    let lastSha = null;
+
+    while (Date.now() < deadline) {
+        const sha = await fetchRemoteSha();
+        if (typeof sha === 'string' && sha.length > 0) {
+            lastSha = sha;
+            // If GitHub reports a different SHA than we had, or exactly the expected commit SHA, we’re good
+            if (sha !== previousSha || (expectedSha && sha === expectedSha)) {
+                return sha;
+            }
+        }
+        await new Promise(r => setTimeout(r, intervalMs));
+    }
+    // Timed out; return whatever we last saw (may be null)
+    return lastSha;
 }
 
 async function reloadLatestContent() {
@@ -1464,12 +1452,24 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
             setToolbarHeight();
         }, 1200);
 
-        // Reload authoritative latest content to guarantee current user sees the committed data
+        const committedSha = (commitData && commitData.sha) ? commitData.sha : '';
+        let newSha;
+        try {
+            newSha = await waitForRemoteShaChange(DATA_SHA, { expectedSha: committedSha, timeoutMs: 15000, intervalMs: 1200 });
+        } catch (e) {
+            newSha = null;
+        }
+
+        // If we saw a new SHA, adopt it before reloading
+        if (typeof newSha === 'string' && newSha.length > 0 && newSha !== DATA_SHA) {
+            DATA_SHA = newSha;
+        }
+
+        // Now reload fresh content from the server (forces cache-bypass via freshApi)
         try {
             await reloadLatestContent();
         } catch (e) {
-            // If reload failed, still return success so UI won't think it failed
-            console.warn('Reload after commit failed (non-fatal):', e);
+            console.warn('Reload after commit failed:', e);
         }
 
         return {
