@@ -54,8 +54,6 @@ const freshApi = (p) => `${p}?fresh=1&ts=${Date.now()}`;
 
 let DATA = [];
 let DATA_SHA = '';
-let isAdmin = false;
-let currentUser = null;
 let CSRF = '';
 const CONTENT_PATH = 'data/anime_songs.json';
 
@@ -283,13 +281,13 @@ function renderRows(items, totalFilteredCount = items.length) {
         const idx = it._index; // stable index we attach during normalization
         const rowActionsAnime = isAdmin ? `
           <div class="row-actions">
-            <button class="btn" data-add-from="${idx}">Add Entry From This Show</button>
+            <button class="btn" data-add-from-uid="${it._uid}">Add Entry From This Show</button>
           </div>` : '';
 
         const rowActionsSong = isAdmin ? `
           <div class="row-actions">
-            <button class="btn secondary" data-edit="${idx}">Edit</button>
-            <button class="btn danger" data-delete="${idx}">Delete</button>
+            <button class="btn secondary" data-edit-uid="${it._uid}">Edit</button>
+            <button class="btn danger" data-delete-uid="${it._uid}">Delete</button>
           </div>` : '';
 
         return `<tr>
@@ -311,21 +309,31 @@ function renderRows(items, totalFilteredCount = items.length) {
     }).join('');
 
     if (isAdmin) {
-        els.rows.querySelectorAll('[data-edit]').forEach(btn => {
+        els.rows.querySelectorAll('[data-edit-uid]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 await restoreSession();
                 if (!isAdmin) { alert('You are not authorized to edit.'); return; }
-                openEditor(Number(btn.getAttribute('data-edit')));
+                const uid = btn.getAttribute('data-edit-uid');
+                const index = DATA.findIndex(x => x._uid === uid);
+                if (index < 0) { alert('Item not found. Try refreshing.'); return; }
+                openEditor(index);
             });
         });
-        els.rows.querySelectorAll('[data-delete]').forEach(btn => {
-            btn.addEventListener('click', () => confirmDelete(Number(btn.getAttribute('data-delete'))));
+        els.rows.querySelectorAll('[data-delete-uid]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const uid = btn.getAttribute('data-delete-uid');
+                const index = DATA.findIndex(x => x._uid === uid);
+                if (index < 0) { alert('Item not found. Try refreshing.'); return; }
+                confirmDelete(index);
+            });
         });
-        els.rows.querySelectorAll('[data-add-from]').forEach(btn => {
+        els.rows.querySelectorAll('[data-add-from-uid]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 await restoreSession();
                 if (!isAdmin) { alert('You are not authorized to add.'); return; }
-                const i = Number(btn.getAttribute('data-add-from'));
+                const uid = btn.getAttribute('data-add-from-uid');
+                const i = DATA.findIndex(x => x._uid === uid);
+                if (i < 0) { alert('Item not found. Try refreshing.'); return; }
                 openEditor(null, buildPresetFromShow(DATA[i]));
             });
         });
@@ -450,7 +458,7 @@ async function init() {
         }));
 
         DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
         populateYearOptions(DATA);
 
@@ -538,7 +546,7 @@ async function init() {
                 _index: i
             }));
             DATA.sort(compareItems);
-            DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+            DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
             populateYearOptions(DATA);
             const saved = loadFilterState();
             setFilterState(saved);
@@ -673,6 +681,7 @@ async function restoreSession() {
         });
         if (!res.ok) throw new Error('auth/me failed');
         const info = await res.json();
+
         if (info.loggedIn) {
             currentUser = info.user;
             isAdmin = !!info.canPush;
@@ -683,8 +692,16 @@ async function restoreSession() {
             localStorage.removeItem('wasAdminOrUser');
         }
     } catch {
-        currentUser = null;
-        isAdmin = false;
+        // Keep existing state on network errors to avoid false logouts
+        // Optional: show a subtle notice in the toolbar if needed
+        const was = localStorage.getItem('wasAdminOrUser');
+        if (was) {
+            // Still consider user signed in locally until next successful check
+            // Do not flip currentUser/isAdmin here
+        } else {
+            currentUser = null;
+            isAdmin = false;
+        }
     }
     updateAdminVisibility();
 }
@@ -822,6 +839,11 @@ function entryKey(it) {
         String(it.episode || ''),
         String(it.time_start || '')
     ].join('|');
+}
+
+function uidFor(it, fallbackIndex) {
+    // A stable-ish client-only UID: entryKey + a suffix in case of duplicates
+    return entryKey(it) + '|' + String(fallbackIndex ?? '');
 }
 
 // Merge new change into the freshest data from server
@@ -1281,17 +1303,19 @@ els.editForm.addEventListener('submit', async (e) => {
     if (index === null) {
         // Optimistic add
         const newItem = { ...out, _index: DATA.length };
+        newItem._uid = uidFor(newItem, newItem._index);
         DATA.push(newItem);
     } else {
         // Optimistic edit
         DATA[index] = { ...DATA[index], ...out };
+        DATA[index]._uid = DATA[index]._uid || uidFor(DATA[index], index);
     }
     // Defer heavy sorting/indexing slightly to keep UI responsive on Save.
     // The current page updates instantly; resort happens a moment later.
     applyFilters({ resetPage: false });
     setTimeout(() => {
         DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: item._uid || uidFor(item, i) }));
         applyFilters({ resetPage: false });
     }, 50);
 
@@ -1340,11 +1364,12 @@ async function confirmDelete(index) {
         // Optimistically update local DATA immediately
         DATA.splice(index, 1);
         DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: item._uid || uidFor(item, i) }));
         applyFilters({ resetPage: false });
 
         // Commit without rechecking JSON during delete
-        await commitDeleteNoFresh(index, msg);
+        const originalForKey = { ...it }; // it is defined earlier as DATA[index] before splice
+        await commitJsonWithRefresh(null, index, msg, originalForKey);
 
         clearDraft(index);
     } catch (err) {
