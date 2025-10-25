@@ -230,7 +230,7 @@ function applyFilters({ resetPage = false } = {}) {
     if (itemsWithoutIds.length > 0) {
         console.warn(`Found ${itemsWithoutIds.length} items without IDs:`, itemsWithoutIds);
     }
-    
+
     const q = normalize(els.q.value);
     const year = els.year.value;
     const season = els.season.value;
@@ -468,10 +468,15 @@ async function init() {
                 issues: [],
                 notes: '',
                 ...x,
-                _index: i
+               _index: i
             };
-            // Ensure the item has a persistent ID
-            ensurePersistentId(item);
+    
+            // FORCE ensure ID exists for every item
+            if (!item.id || item.id.trim() === '') {
+                const rand = Math.random().toString(16).slice(2, 10);
+                item.id = `${Date.now()}-${rand}`;
+            }
+    
             return item;
         });
 
@@ -648,6 +653,15 @@ function wireAdminBar() {
         if (!isAdmin) { alert('You are not authorized to add.'); return; }
         openEditor(null);
     });
+    els.fixIdsBtn = document.getElementById('fixIdsBtn');
+    els.fixIdsBtn.addEventListener('click', async () => {
+        await restoreSession();
+        if (!isAdmin) {
+            alert('You are not authorized to fix IDs.');
+            return;
+        }
+        await fixAllMissingIds();
+    });
 }
 
 function updateAdminVisibility() {
@@ -656,16 +670,19 @@ function updateAdminVisibility() {
         hide(els.loginBtn);
         show(els.logoutBtn);
         show(els.addBtn);
+        show(els.fixIdsBtn); // Add this line
     } else if (currentUser && !isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         hide(els.addBtn);
+        hide(els.fixIdsBtn); // Add this line
     } else {
         els.loginStatus.textContent = 'Not signed in';
         show(els.loginBtn);
         hide(els.logoutBtn);
         hide(els.addBtn);
+        hide(els.fixIdsBtn); // Add this line
     }
     setToolbarHeight();
 }
@@ -874,7 +891,22 @@ async function loginWithGitHub() {
             if (resp.csrf) CSRF = resp.csrf;
             // Double-check push permission
             await restoreSession();
-            if (!isAdmin) alert('Signed in but you do not have write access to this repo.');
+    
+            if (!isAdmin) {
+                alert('Signed in but you do not have write access to this repo.');
+            } else {
+                // CHECK FOR MISSING IDs AND PROMPT TO FIX
+                await reloadLatestContent(); // Make sure we have latest data
+                const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
+                if (itemsWithoutIds.length > 0) {
+                    setTimeout(() => {
+                        if (confirm(`We found ${itemsWithoutIds.length} items without IDs. This may cause problems when editing or deleting.\n\nWould you like to automatically add IDs to these items now?`)) {
+                            fixAllMissingIds();
+                        }
+                    }, 1000);
+                }
+            }
+    
             applyFilters();
             return;
         }
@@ -930,6 +962,67 @@ function ensurePersistentId(it) {
     const id = `${Date.now()}-${Math.abs(hash).toString(16)}-${rand}`;
     it.id = id;
     return id;
+}
+
+async function fixAllMissingIds() {
+    if (!isAdmin) {
+        alert('You must be logged in as admin to fix IDs.');
+        return;
+    }
+    
+    const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
+    if (itemsWithoutIds.length === 0) {
+        alert('All items already have IDs!');
+        return;
+    }
+    
+    if (!confirm(`This will add IDs to ${itemsWithoutIds.length} items that are missing them. Continue?`)) {
+        return;
+    }
+    
+    try {
+        // Create updated data with IDs for all items
+        const allItems = DATA.map(item => {
+            const itemCopy = { ...item };
+            if (!itemCopy.id || itemCopy.id.trim() === '') {
+                const rand = Math.random().toString(16).slice(2, 10);
+                itemCopy.id = `${Date.now()}-${rand}`;
+            }
+            // Remove internal properties before saving
+            const { _index, _uid, ...cleanItem } = itemCopy;
+            return cleanItem;
+        });
+        
+        await ensureCsrf();
+        
+        const res = await fetch(api('/commit'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                bulkUpdate: allItems,
+                message: `Fix: Add missing IDs to ${itemsWithoutIds.length} items`,
+                baseSha: DATA_SHA
+            })
+        });
+        
+        if (!res.ok) {
+            throw new Error(`Failed to save: ${res.status}`);
+        }
+        
+        const result = await res.json();
+        if (result.sha) DATA_SHA = result.sha;
+        
+        alert(`✅ Successfully added IDs to ${itemsWithoutIds.length} items! The page will now reload.`);
+        location.reload();
+        
+    } catch (err) {
+        alert(`Failed to fix IDs: ${err.message}`);
+    }
 }
 
 async function fixMissingIdsIfAdmin() {
@@ -1400,11 +1493,18 @@ async function confirmDeleteById(id) {
         return;
     }
 
-    const itemIndex = DATA.findIndex(item => item && item.id === id);
+    // FIRST: Check if the item exists and has an ID
+    let itemIndex = DATA.findIndex(item => item && item.id === id);
+    
+    // If not found by ID, try to find by other means
     if (itemIndex < 0) {
-        // Try to find by other means if ID doesn't match
-        const item = DATA.find(item => item && item.id === id);
-        if (!item) {
+        // Look for any item without ID that might be the one we're trying to delete
+        const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
+        if (itemsWithoutIds.length > 0) {
+            alert(`This item doesn't have an ID. Please use the "Fix missing IDs" button first to assign IDs to all items, then try deleting again.`);
+            return;
+        } else {
+            // Item not found at all
             const doRefresh = confirm('Item not found in current data. Refresh now?');
             if (doRefresh) {
                 await reloadLatestContent();
