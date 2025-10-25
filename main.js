@@ -452,6 +452,17 @@ async function init() {
         const data = await res.json();
         const raw = data.content;
         DATA_SHA = data.sha;
+        try {
+            // Ask server for the remote SHA (meta) and if different, force a fresh load
+            const remoteSha = await fetchRemoteSha();
+            if (remoteSha && remoteSha !== DATA_SHA) {
+                console.log('Local data SHA differs from remote; forcing fresh load.', DATA_SHA, remoteSha);
+                await reloadLatestContent(); // existing helper does the fresh fetch + re-render
+                return; // stop the rest of this init() run; reloadLatestContent will re-init UI state
+            }
+        } catch (e) {
+            console.warn('SHA check failed (non-fatal):', e);
+        }
         DATA = (raw || []).map((x, i) => {
             const item = {
                 anime_en: '', anime_romaji: '',
