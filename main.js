@@ -918,12 +918,13 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
 
         if (target && target.id) {
             if (changeObj === null) {
-                // DELETE: Remove item by ID
-                const itemExists = working.some(x => x.id === target.id);
-                if (!itemExists) {
+                const beforeLength = working.length;
+                working = working.filter(x => x.id !== target.id);
+                const afterLength = working.length;
+        
+                if (beforeLength === afterLength) {
                     throw new Error('Item not found for deletion.');
                 }
-                working = working.filter(x => x.id !== target.id);
             } else {
                 // EDIT: Update existing item
                 const idx = working.findIndex(x => x.id === target.id);
@@ -1261,32 +1262,30 @@ els.editForm.addEventListener('submit', async (e) => {
 });
 
 async function confirmDeleteById(id) {
-    await restoreSession();
-
-    const freshCheck = await isFreshAgainstRemoteSha();
-    if (!freshCheck.ok) {
-        const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
-        if (doRefresh) {
-            location.href = location.origin + '/?r=' + Date.now();
+    const guard = await requireFreshAndAdmin();
+    if (!guard.ok) {
+        if (guard.reason === 'not_admin') {
+            alert('You are not currently signed in with write access. Please sign in again.');
+        } else if (guard.reason === 'stale_json') {
+            const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
+            if (doRefresh) {
+                location.href = location.origin + '/?r=' + Date.now();
+            }
+        } else {
+            alert(guard.message || 'Could not verify permissions. Please try again.');
         }
         return;
     }
 
-    if (!isAdmin) {
-        alert('You are not currently signed in with write access. Please sign in again.');
-        return;
-    }
-
-    // FIX: Use the actual DATA array to find the item
     const itemIndex = DATA.findIndex(item => item && item.id === id);
     if (itemIndex < 0) { 
         alert('Item not found in current data. Try refreshing.'); 
         return; 
     }
     
-    const it = DATA[itemIndex];
-    const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
-    const anime = it?.anime_en || it?.anime_romaji || '(unknown)';
+    const deletedItem = { ...DATA[itemIndex] };
+    const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
+    const anime = deletedItem?.anime_en || deletedItem?.anime_romaji || '(unknown)';
     
     if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
 
@@ -1300,22 +1299,16 @@ async function confirmDeleteById(id) {
 
     try {
         const msg = `Delete entry id ${id}`;
-
-        // OPTIMISTIC UPDATE: Remove immediately from UI
-        const deletedItem = DATA[itemIndex]; // Save for potential revert
-    
+        
         DATA = DATA.filter(item => item.id !== id);
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
 
-        // Commit to server
         await commitJsonWithRefresh(null, { id }, msg, deletedItem);
 
-        // Success - changes already visible
-        // No need to reload page
-
     } catch (err) {
-        // REVERT optimistic update on error
-        DATA.push(deletedItem);
+        DATA.splice(itemIndex, 0, deletedItem);
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
