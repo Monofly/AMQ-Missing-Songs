@@ -499,7 +499,7 @@ async function init() {
         setToolbarHeight();
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
-        els.rows.innerHTML = '<tr><td colspan="5"><span class="notice error">Failed to load data. Please refresh the page.</span></td></tr>';
+        els.rows.innerHTML = '<tr><td colspan="5"><span class="notice error">Failed to load data. Please refresh the page. If it keeps failing, try again later.</span></td></tr>';
         updateAdminVisibility();
         updatePagerUI();
     }
@@ -756,8 +756,6 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         }
         // ---- END ----
 
-        const freshArray = freshData.content;
-        const freshSha = freshData.sha;
         const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
         const freshKeys = new Map(freshWithIndex.map(x => [entryKey(x), x._index]));
 
@@ -936,6 +934,13 @@ async function openEditor(index, preset) {
     await restoreSession();
     if (!isAdmin) {
         alert('You are not currently signed in with write access. Please sign in again.');
+        return;
+    }
+    // Recheck data is fresh before editing
+    try {
+        await ensureFreshData();
+    } catch (err) {
+        alert(err.message);
         return;
     }
     els.modalNotice.textContent = '';
