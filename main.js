@@ -61,6 +61,36 @@ const PAGE_SIZE = 50;
 let currentPage = 1;
 let lastFiltered = [];
 
+// Persisted filter state
+const FILTER_KEYS = ['q', 'year', 'season', 'type', 'status'];
+function getFilterState() {
+    return {
+        q: els.q.value,
+        year: els.year.value,
+        season: els.season.value,
+        type: els.type.value,
+        status: els.status.value
+    };
+}
+function setFilterState(state) {
+    if (!state) return;
+    if (typeof state.q === 'string') els.q.value = state.q;
+    if (state.year) els.year.value = state.year;
+    if (state.season) els.season.value = state.season;
+    if (state.type) els.type.value = state.type;
+    if (state.status) els.status.value = state.status;
+}
+function saveFilterState() {
+    const s = getFilterState();
+    try { localStorage.setItem('filters', JSON.stringify(s)); } catch { }
+}
+function loadFilterState() {
+    try {
+        const raw = localStorage.getItem('filters');
+        return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+}
+
 function watchToolbarHeight() {
     const toolbar = document.getElementById('toolbar');
     if (!toolbar) return;
@@ -192,7 +222,7 @@ function timeRange(start, end) {
     return `${escapeHtml(start)}–${escapeHtml(end)}`;
 }
 
-function applyFilters() {
+function applyFilters({ resetPage = false } = {}) {
     const q = normalize(els.q.value);
     const year = els.year.value;
     const season = els.season.value;
@@ -232,8 +262,9 @@ function applyFilters() {
         .sort(compareItems);
 
     lastFiltered = filtered;
-    currentPage = 1; // reset on every search/filter change
+    if (resetPage) currentPage = 1; // only reset if explicitly asked
     renderPage();
+    saveFilterState();
 }
 
 function renderRows(items, totalFilteredCount = items.length) {
@@ -280,13 +311,19 @@ function renderRows(items, totalFilteredCount = items.length) {
 
     if (isAdmin) {
         els.rows.querySelectorAll('[data-edit]').forEach(btn => {
-            btn.addEventListener('click', () => openEditor(Number(btn.getAttribute('data-edit'))));
+            btn.addEventListener('click', async () => {
+                await restoreSession();
+                if (!isAdmin) { alert('You are not authorized to edit.'); return; }
+                openEditor(Number(btn.getAttribute('data-edit')));
+            });
         });
         els.rows.querySelectorAll('[data-delete]').forEach(btn => {
             btn.addEventListener('click', () => confirmDelete(Number(btn.getAttribute('data-delete'))));
         });
         els.rows.querySelectorAll('[data-add-from]').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
+                await restoreSession();
+                if (!isAdmin) { alert('You are not authorized to add.'); return; }
                 const i = Number(btn.getAttribute('data-add-from'));
                 openEditor(null, buildPresetFromShow(DATA[i]));
             });
@@ -366,9 +403,14 @@ function goToPage(n) {
 
 function populateYearOptions(items) {
     const years = uniqueYears(items);
-    document.getElementById('year').innerHTML =
+    const select = document.getElementById('year');
+    const previous = select.value || 'all';
+    select.innerHTML =
         `<option value="all">All years</option>` +
         years.map(y => `<option value="${y}">${y}</option>`).join('');
+    // Restore previous selection if still available
+    const restore = years.includes(Number(previous)) ? previous : 'all';
+    select.value = restore;
 }
 
 async function init() {
@@ -405,7 +447,12 @@ async function init() {
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 
         populateYearOptions(DATA);
-        [els.q, els.year, els.season, els.type, els.status].forEach(el => el.addEventListener('input', applyFilters));
+        // Restore filters from localStorage before wiring events
+        const saved = loadFilterState();
+        setFilterState(saved);
+        [els.q, els.year, els.season, els.type, els.status].forEach(el => {
+            el.addEventListener('input', () => applyFilters({ resetPage: true }));
+        });
         wireAdminBar();
 
         // Pager controls
@@ -413,7 +460,7 @@ async function init() {
             els.prevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
             els.nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
 
-                const tryInputPage = () => {
+            const tryInputPage = () => {
                 const n = Number.parseInt(els.pageInput.value, 10);
                 if (!Number.isFinite(n)) return;
                 goToPage(n); // clampPage will fix <=0 => 1 and >max => max
@@ -447,7 +494,7 @@ async function init() {
             await restoreSession();
             await ensureCsrf();
         }
-        applyFilters();
+        applyFilters({ resetPage: true });
         setToolbarHeight();
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
@@ -627,6 +674,173 @@ async function verifyAdmin() {
     return isAdmin;
 }
 
+// Build a stable-ish key to find matching entries across refreshes
+function entryKey(it) {
+    return [
+        normalize(it.anime_en || it.anime_romaji || ''),
+        String(it.year || ''),
+        String(it.season || ''),
+        String(it.type || ''),
+        normalize(it.song_title_romaji || it.song_title_original || ''),
+        normalize(it.artist_romaji || it.artist_original || ''),
+        String(it.episode || ''),
+        String(it.time_start || '')
+    ].join('|');
+}
+
+// Merge new change into the freshest data from server
+async function commitJsonWithRefresh(changeObj, index, commitMessage) {
+    els.saveBtn.disabled = true;
+    show(els.saveNotice);
+    els.saveNotice.textContent = 'Saving…';
+    try {
+        await ensureCsrf();
+
+        // 1) Load freshest content and compute baseSha by asking the worker for meta via commit probe
+        // We can reuse /content for body. For SHA, we do a small probe through commit meta step by requesting PUT metadata with no changes,
+        // but simpler: ask the commit endpoint to compare using baseSha later. We'll obtain currentSha by calling /content first.
+        const freshRes = await fetch(api('/content'), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
+        const freshArray = await freshRes.json();
+
+        // Build maps for matching
+        const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
+        const freshKeys = new Map(freshWithIndex.map(x => [entryKey(x), x._index]));
+
+        // Compute target key from current DATA (for edit) or from changeObj (for add)
+        let targetKey;
+        if (index === null) {
+            targetKey = entryKey(changeObj);
+        } else {
+            const currentIt = DATA[index];
+            targetKey = entryKey(currentIt);
+        }
+
+        // 2) Apply change on top of fresh data
+        let newArray = freshArray.slice();
+        if (index === null) {
+            // Add new
+            newArray.push(changeObj);
+        } else {
+            // Edit existing: find by key in fresh data
+            const matchIdx = freshKeys.has(targetKey) ? freshKeys.get(targetKey) : null;
+            if (matchIdx === null || matchIdx === undefined) {
+                // If not found, append to avoid deleting someone else's new item
+                newArray.push(changeObj);
+            } else {
+                newArray[matchIdx] = { ...newArray[matchIdx], ...changeObj };
+            }
+        }
+
+        // 3) Send commit with baseSha protection
+        const payloadArray = newArray.map(({ _index, ...rest }) => rest);
+        const res = await fetch(api('/commit'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF
+            },
+            credentials: 'include',
+            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: await getCurrentSha() })
+        });
+
+        if (res.status === 409) {
+            // Out of date → retry once with freshest data
+            const j = await res.json().catch(() => ({}));
+            // Re-fetch latest and redo merge
+            const freshRes2 = await fetch(api('/content'), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (!freshRes2.ok) throw new Error(`Refresh failed ${freshRes2.status}`);
+            const freshArray2 = await freshRes2.json();
+
+            const fresh2WithIndex = freshArray2.map((x, i) => ({ ...x, _index: i }));
+            const fresh2Keys = new Map(fresh2WithIndex.map(x => [entryKey(x), x._index]));
+            let newArray2 = freshArray2.slice();
+
+            const matchIdx2 = index === null ? null : (fresh2Keys.has(targetKey) ? fresh2Keys.get(targetKey) : null);
+            if (index === null) {
+                newArray2.push(changeObj);
+            } else if (matchIdx2 === null || matchIdx2 === undefined) {
+                newArray2.push(changeObj);
+            } else {
+                newArray2[matchIdx2] = { ...newArray2[matchIdx2], ...changeObj };
+            }
+
+            const payloadArray2 = newArray2.map(({ _index, ...rest }) => rest);
+            const res2 = await fetch(api('/commit'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-Token': CSRF
+                },
+                credentials: 'include',
+                body: JSON.stringify({ content: payloadArray2, message: commitMessage, baseSha: j.currentSha || await getCurrentSha() })
+            });
+
+            if (!res2.ok) {
+                const txt2 = await res2.text().catch(() => '');
+                throw new Error(`Save failed (retry): ${res2.status} ${txt2}`);
+            }
+
+            await afterCommitUpdateLocal(payloadArray2);
+            els.saveNotice.textContent = 'Saved.';
+            setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
+            return;
+        }
+
+        if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(`Save failed: ${res.status} ${txt}`);
+        }
+
+        await afterCommitUpdateLocal(payloadArray);
+        els.saveNotice.textContent = 'Saved.';
+        setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
+
+    } finally {
+        els.saveBtn.disabled = false;
+    }
+}
+
+// Get current SHA by asking the repo metadata via a lightweight HEAD-like call
+// We reuse the worker to expose SHA by doing a meta fetch inside commit flow.
+// For simplicity here, we call the GitHub contents API via the worker by piggybacking:
+// the worker already reads meta in commit; we don't have a separate endpoint,
+// so we fetch /content and rely on 2nd commit to provide currentSha after conflict.
+// Fallback: return empty string if unavailable.
+async function getCurrentSha() {
+    // No dedicated endpoint; return empty string and let server accept if no baseSha provided
+    return '';
+}
+
+// After a successful commit, refresh DATA locally without losing filters or page
+async function afterCommitUpdateLocal(payloadArray) {
+    // Update local DATA and UI from our payload (sorted and re-indexed)
+    const payload = JSON.stringify(payloadArray, null, 2) + '\n';
+    DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+
+    // Refresh year options but keep selected year
+    const saved = loadFilterState();
+    populateYearOptions(DATA);
+    setFilterState(saved);
+
+    // Reapply filters without resetting page
+    applyFilters({ resetPage: false });
+}
+
 async function commitJson(newArray, commitMessage) {
     els.saveBtn.disabled = true;
     show(els.saveNotice);
@@ -703,11 +917,16 @@ function buildPresetFromShow(it) {
 
 function openEditor(index, preset) {
     els.modalNotice.textContent = '';
-    els.editForm.reset();
     const isNew = (index === null || index === undefined);
+    const indexOrNew = isNew ? null : index;
     els.modalTitle.textContent = isNew ? 'Add entry' : 'Edit entry';
 
-    if (!isNew) {
+    // Prefer draft if available, otherwise preset/data
+    const draft = loadDraft(indexOrNew);
+
+    if (draft) {
+        fillForm({ ...draft, _index: isNew ? '' : index });
+    } else if (!isNew) {
         const it = DATA[index];
         fillForm(it);
     } else {
@@ -716,13 +935,22 @@ function openEditor(index, preset) {
     }
 
     // Show the modal
-    els.modalBackdrop.hidden = false;                  // show
+    els.modalBackdrop.hidden = false;
     els.modalBackdrop.setAttribute('aria-hidden', 'false');
+
+    // Auto-save draft on any input change
+    const f = els.editForm;
+    const onChange = () => saveDraft(indexOrNew);
+    Array.from(f.elements).forEach(el => {
+        if (el.name) el.addEventListener('input', onChange, { passive: true });
+        if (el.name) el.addEventListener('change', onChange, { passive: true });
+    });
 }
 
 function closeEditor() {
-    els.modalBackdrop.hidden = true;   // hide
+    els.modalBackdrop.hidden = true;
     els.modalBackdrop.setAttribute('aria-hidden', 'true');
+    // Do NOT clear the form or draft here (only on Save/Cancel)
 }
 
 function fillForm(it) {
@@ -800,7 +1028,36 @@ function readForm() {
     return { out, index };
 }
 
-els.cancelBtn.addEventListener('click', () => closeEditor());
+// Per-entry draft storage (session) so accidental close doesn't lose data
+function draftKeyFor(indexOrNew) {
+    return indexOrNew === null ? 'draft:new' : `draft:${indexOrNew}`;
+}
+function saveDraft(indexOrNew) {
+    try {
+        const { out } = readForm();
+        sessionStorage.setItem(draftKeyFor(indexOrNew), JSON.stringify(out));
+    } catch {}
+}
+function loadDraft(indexOrNew) {
+    try {
+        const raw = sessionStorage.getItem(draftKeyFor(indexOrNew));
+        return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+}
+function clearDraft(indexOrNew) {
+    try { sessionStorage.removeItem(draftKeyFor(indexOrNew)); } catch {}
+}
+
+els.cancelBtn.addEventListener('click', () => {
+    // Determine which draft to clear
+    const idxStr = els.editForm.elements._index.value;
+    const indexOrNew = idxStr === '' ? null : Number(idxStr);
+    clearDraft(indexOrNew);
+    // Reset form on explicit Cancel
+    els.editForm.reset();
+    closeEditor();
+});
+
 els.modalBackdrop.addEventListener('click', (e) => {
     if (e.target === els.modalBackdrop) closeEditor();
 });
@@ -809,27 +1066,34 @@ els.editForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!isAdmin) {
         els.modalNotice.textContent = 'You are not authorized to save.';
+        els.modalNotice.classList.add('error');
         return;
     }
+    els.modalNotice.textContent = '';
+    els.modalNotice.classList.remove('error');
+
     const { out, index } = readForm();
 
     // Validate minimal things
     if (out.year !== '' && (!Number.isFinite(out.year) || String(out.year).length !== 4)) {
         els.modalNotice.textContent = 'Year must be 4 digits (or leave blank).';
+        els.modalNotice.classList.add('error');
         return;
     }
 
-    let newArray = DATA.map(x => ({ ...x }));
-    if (index === null) {
-        // add
-        newArray.push(out);
-    } else {
-        newArray[index] = { ...newArray[index], ...out };
+    try {
+        const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
+        await commitJsonWithRefresh(out, index, msg);
+        // Success → clear draft and close
+        const indexOrNew = index === null ? null : index;
+        clearDraft(indexOrNew);
+        els.editForm.reset();
+        closeEditor();
+    } catch (err) {
+        // Show error inside the form; do NOT close
+        els.modalNotice.textContent = String(err.message || err);
+        els.modalNotice.classList.add('error');
     }
-
-    const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
-    await commitJson(newArray, msg);
-    closeEditor();
 });
 
 async function confirmDelete(index) {

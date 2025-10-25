@@ -482,7 +482,7 @@ export default {
             if (!token) return json({ error: 'Unauthorized' }, 401, cors);
 
             const body = await req.json().catch(() => ({}));
-            const { content, message } = body || {};
+            const { content, message, baseSha } = body || {};
             if (!Array.isArray(content)) return json({ error: 'Invalid content (expected array)' }, 400, cors);
 
             for (const item of content) {
@@ -501,6 +501,10 @@ export default {
                 `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}?ref=${BRANCH}`,
                 { headers }
             ).then(r => r.json());
+            // Concurrency guard: reject if client baseSha is provided and doesn't match current
+            if (baseSha && meta.sha && baseSha !== meta.sha) {
+                return json({ error: 'out_of_date', currentSha: meta.sha }, 409, cors);
+            }
 
             const payloadStr = JSON.stringify(content, null, 2) + '\n';
             if (payloadStr.length > 500_000) {

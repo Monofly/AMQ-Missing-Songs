@@ -246,6 +246,20 @@ footer {
     /* matches .grid / .grid-3 gap = 10px */
 }
 
+.notice.error {
+    color: var(--bad);
+}
+
+.notice.success {
+    color: var(--ok);
+}
+
+.form-draft-note {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 8px 0 0;
+}
+
 /* Modal */
 .modal-backdrop {
     position: fixed;
