@@ -916,12 +916,16 @@ async function fixMissingIdsIfAdmin() {
     }
 
     const doFix = confirm(
-        `Found ${itemsWithoutIds.length} items without IDs.\n\n` +
-        `Would you like to automatically add IDs to them?\n` +
-        `(This will commit to GitHub)`
+        `CRITICAL: Found ${itemsWithoutIds.length} items without IDs.\n\n` +
+        `IDs are required for editing and deleting items.\n` +
+        `This will automatically add IDs and commit to GitHub.\n\n` +
+        `Click OK to continue (required for the site to work properly).`
     );
 
-    if (!doFix) return;
+    if (!doFix) {
+        alert('Warning: Without IDs, you cannot edit or delete existing items. Please add IDs when ready.');
+        return;
+    }
 
     try {
         itemsWithoutIds.forEach(item => ensurePersistentId(item));
@@ -946,18 +950,19 @@ async function fixMissingIdsIfAdmin() {
         });
 
         if (!res.ok) {
-            throw new Error(`Failed to save IDs: ${res.status}`);
+            const errorText = await res.text().catch(() => '');
+            throw new Error(`Failed to save IDs: ${res.status} ${errorText}`);
         }
 
         const result = await res.json();
         if (result.sha) DATA_SHA = result.sha;
 
-        alert(`Successfully added IDs to ${itemsWithoutIds.length} items!`);
+        alert(`✅ Successfully added IDs to ${itemsWithoutIds.length} items!\n\nYou can now edit and delete items normally.`);
         
         await reloadLatestContent();
     } catch (err) {
         console.error('Failed to fix missing IDs:', err);
-        alert(`Failed to add IDs: ${err.message}`);
+        alert(`❌ Failed to add IDs: ${err.message}\n\nPlease try again or contact support.`);
     }
 }
 
@@ -1069,6 +1074,11 @@ async function openEditor(index, preset) {
     }
     if (!isAdmin) {
         alert('You are not currently signed in with write access. Please sign in again.');
+        return;
+    }
+    
+    if (index !== null && (!DATA[index] || !DATA[index].id || DATA[index].id.trim() === '')) {
+        alert('This item has no ID and cannot be edited.\n\nPlease refresh the page to trigger the ID fix, or contact support.');
         return;
     }
     els.modalNotice.textContent = '';
@@ -1360,7 +1370,7 @@ async function confirmDeleteById(id) {
     const originalId = deletedItem.id;
     
     if (!originalId || originalId.trim() === '') {
-        alert('Item has no ID. This should not happen. Please refresh the page.');
+        alert('This item has no ID and cannot be deleted.\n\nPlease refresh the page to trigger the ID fix, or contact support.');
         return;
     }
     

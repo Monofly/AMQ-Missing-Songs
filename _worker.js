@@ -660,6 +660,7 @@ export default {
                 if (!newItem.id || newItem.id.trim() === '') {
                     const rand = Math.random().toString(16).slice(2, 10);
                     newItem.id = `${Date.now()}-${rand}`;
+                    console.log(`Generated new ID for item: ${newItem.id}`);
                 }
 
                 working.push(newItem);
