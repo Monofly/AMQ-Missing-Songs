@@ -322,9 +322,8 @@ function renderRows(items, totalFilteredCount = items.length) {
         els.rows.querySelectorAll('[data-delete-id]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-delete-id');
-                const index = DATA.findIndex(x => x.id === id);
-                if (index < 0) { alert('Item not found. Try refreshing.'); return; }
-                confirmDelete(index);
+                if (!id) { alert('Item not found. Try refreshing.'); return; }
+                confirmDeleteById(id);
             });
         });
         els.rows.querySelectorAll('[data-add-from-id]').forEach(btn => {
@@ -691,6 +690,45 @@ async function fetchRemoteSha() {
     }
 }
 
+async function reloadLatestContent() {
+    const res = await fetch(freshApi('/content'), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+    });
+    if (!res.ok) throw new Error(`Refresh load error ${res.status}`);
+    const data = await res.json();
+    const raw = data.content;
+    DATA_SHA = data.sha;
+
+    DATA = (raw || []).map((x, i) => ({
+        anime_en: '', anime_romaji: '',
+        year: '', season: 'Winter',
+        type: 'OP',
+        song_title_romaji: '', song_title_original: '',
+        artist_romaji: '', artist_original: '',
+        composer_romaji: '', composer_original: '',
+        arranger_romaji: '', arranger_original: '',
+        episode: '', time_start: '', time_end: '',
+        unidentified: false,
+        clean_available: true,
+        ann_url: '', mal_url: '',
+        issues: [],
+        notes: '',
+        ...x,
+        _index: i
+    }));
+
+    DATA = DATA.map(it => { ensurePersistentId(it); return it; });
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
+
+    populateYearOptions(DATA);
+    applyFilters({ resetPage: false });
+    setToolbarHeight();
+}
+
 async function isFreshAgainstRemoteSha() {
     const remote = await fetchRemoteSha();
     if (!remote) return { ok: false, reason: 'meta_unavailable' };
@@ -854,34 +892,42 @@ function ensurePersistentId(it) {
     return id;
 }
 
+function indexById(id) {
+    if (!id) return -1;
+    return DATA.findIndex(x => x && x.id === id);
+}
+
 // Merge new change into the freshest data from server
-async function commitJsonWithRefresh(changeObj, index, commitMessage, originalItemForKey) {
-    els.saveBtn.disabled = true;
+async function commitJsonWithRefresh(changeObj, target, commitMessage, originalItemForKey) {
+    // target can be { id } for edit/delete or null for add
+    els.saveBtn && (els.saveBtn.disabled = true);
     show(els.saveNotice);
-    els.saveNotice.textContent = 'Saving…';
+    els.saveNotice.textContent = changeObj === null ? 'Deleting…' : 'Saving…';
     els.saveNotice.classList.add('saving');
 
     try {
         await ensureCsrf();
 
-        // Build payload from current local DATA without reloading JSON
         let working = DATA.slice();
 
-        if (index === null) {
-            if (changeObj === null) throw new Error('Cannot delete a new unsaved entry.');
-            // Add
-            working.push(changeObj);
-        } else {
+        if (target && target.id) {
+            const idx = working.findIndex(x => x.id === target.id);
+            if (idx < 0) throw new Error('Item not found for commit.');
             if (changeObj === null) {
-                // Delete
-                working.splice(index, 1);
+                // Delete by id
+                working = working.filter(x => x.id !== target.id);
             } else {
-                // Edit by index (we preserved id earlier)
-                working[index] = { ...working[index], ...changeObj };
+                // Edit by id
+                working[idx] = { ...working[idx], ...changeObj, id: target.id };
             }
+        } else {
+            // Add
+            if (changeObj === null) throw new Error('Cannot delete a new unsaved entry.');
+            const newItem = { ...changeObj };
+            ensurePersistentId(newItem);
+            working.push(newItem);
         }
 
-        // Clean transient fields out of payload
         const payloadArray = working.map(({ _index, _uid, ...rest }) => rest);
 
         const res = await fetch(api('/commit'), {
@@ -916,68 +962,13 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
         }
 
         const commitData = await res.json();
-        if (commitData.sha) {
-            DATA_SHA = commitData.sha;
-        }
+        if (commitData.sha) DATA_SHA = commitData.sha;
 
         els.saveNotice.classList.remove('saving');
-        els.saveNotice.textContent = 'Saved.';
+        els.saveNotice.textContent = changeObj === null ? 'Deleted.' : 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
     } finally {
-        els.saveBtn.disabled = false;
-    }
-}
-
-async function commitDeleteNoFresh(index, commitMessage) {
-    els.saveBtn?.disabled && (els.saveBtn.disabled = true);
-    show(els.saveNotice);
-    els.saveNotice.textContent = 'Deleting…';
-    els.saveNotice.classList.add('saving');
-
-    try {
-        await ensureCsrf();
-
-        // Build payload from current local DATA without reloading JSON
-        const newArray = DATA
-            .filter((_, i) => i !== index)
-            .map(({ _index, ...rest }) => rest);
-
-        const res = await fetch(api('/commit'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-Token': CSRF
-            },
-            credentials: 'include',
-            body: JSON.stringify({ content: newArray, message: commitMessage, baseSha: DATA_SHA })
-        });
-
-        if (res.status === 409) {
-            // Conflict: tell user to refresh; do NOT recheck JSON here
-            const txt = await res.text().catch(() => '');
-            throw new Error('Delete conflict detected. Please refresh the page and try again.');
-        }
-
-        if (!res.ok) {
-            const txt = await res.text().catch(() => '');
-            throw new Error(`Delete failed: ${res.status} ${txt}`);
-        }
-
-        const commitData = await res.json();
-
-        // Update local SHA so later freshness checks compare correctly
-        if (commitData.sha) {
-            DATA_SHA = commitData.sha;
-        }
-
-        // Finish the delete UI
-        els.saveNotice.classList.remove('saving');
-        els.saveNotice.textContent = 'Deleted.';
-
-        setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
-    } finally {
-        els.saveBtn?.disabled && (els.saveBtn.disabled = false);
+        els.saveBtn && (els.saveBtn.disabled = false);
     }
 }
 
@@ -1013,8 +1004,11 @@ async function openEditor(index, preset) {
     await restoreSession();
     const freshCheck = await isFreshAgainstRemoteSha();
     if (!freshCheck.ok) {
-        alert('Your local list is outdated. Please refresh the page, then try again.');
-       return;
+        const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
+        if (doRefresh) {
+            location.href = location.origin + '/?r=' + Date.now();
+        }
+        return;
     }
     if (!isAdmin) {
         alert('You are not currently signed in with write access. Please sign in again.');
@@ -1223,8 +1217,10 @@ els.editForm.addEventListener('submit', async (e) => {
     }, 50);
 
     try {
-        const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
-        await commitJsonWithRefresh(out, index, msg, originalForKey);
+        const target = index === null ? null : { id: DATA[index].id };
+        const msg = index === null ? 'Add entry' : `Edit entry id ${target.id}`;
+        await commitJsonWithRefresh(out, target, msg, originalForKey);
+        await reloadLatestContent();
         clearDraft(index === null ? null : index);
         els.editForm.reset();
         closeEditor();
@@ -1236,11 +1232,15 @@ els.editForm.addEventListener('submit', async (e) => {
     }
 });
 
-async function confirmDelete(index) {
+async function confirmDeleteById(id) {
     await restoreSession();
+
     const freshCheck = await isFreshAgainstRemoteSha();
     if (!freshCheck.ok) {
-        alert('Your local list is outdated. Please refresh the page, then try again.');
+        const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
+        if (doRefresh) {
+            location.href = location.origin + '/?r=' + Date.now();
+        }
         return;
     }
 
@@ -1249,7 +1249,9 @@ async function confirmDelete(index) {
         return;
     }
 
-    const it = DATA[index];
+    const idx = indexById(id);
+    if (idx < 0) { alert('Item not found. Try refreshing.'); return; }
+    const it = DATA[idx];
     const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
     const anime = it?.anime_en || it?.anime_romaji || '(unknown)';
     if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
@@ -1260,29 +1262,30 @@ async function confirmDelete(index) {
     }
     SAVE_QUEUE_BUSY = true;
 
-    // Disable all delete buttons temporarily
     document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
 
     try {
-        const msg = `Delete entry at index ${index}`;
+        const msg = `Delete entry id ${id}`;
 
-        // Optimistically update local DATA immediately
-        DATA.splice(index, 1);
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        // Optimistic UI: remove by id (not index), no resort until after server confirms.
+        const beforeLen = DATA.length;
+        DATA = DATA.filter(item => item.id !== id);
+        if (DATA.length === beforeLen) {
+            throw new Error('Delete failed locally. Item id not found.');
+        }
+
         applyFilters({ resetPage: false });
 
-        // Commit without rechecking JSON during delete
-        const originalForKey = { ...it }; // it is defined earlier as DATA[index] before splice
-        await commitJsonWithRefresh(null, index, msg, originalForKey);
+        // Commit using id-safe payload
+        await commitJsonWithRefresh(null, { id }, msg, { ...it });
 
-        clearDraft(index);
+        // After successful commit, force a fresh reload of JSON to avoid drift
+        await reloadLatestContent();
+
+        clearDraft(idx);
     } catch (err) {
         alert(`Delete failed: ${err.message || err}`);
-        // Optional: restore UI if needed by refetching fresh after an error
-        // Not required by your instruction, so we leave UI as-is.
     } finally {
-        // Re-enable delete buttons
         document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = false);
         SAVE_QUEUE_BUSY = false;
     }
