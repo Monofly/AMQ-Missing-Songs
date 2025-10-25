@@ -499,7 +499,7 @@ async function init() {
         setToolbarHeight();
     } catch (e) {
         els.count.textContent = 'Could not load data/anime_songs.json';
-        els.rows.innerHTML = '';
+        els.rows.innerHTML = '<tr><td colspan="5"><span class="notice error">Failed to load data. Please refresh the page.</span></td></tr>';
         updateAdminVisibility();
         updatePagerUI();
     }
@@ -620,25 +620,28 @@ async function restoreSession() {
 }
 
 async function ensureFreshData() {
-        const res = await fetch(api('/content'), {
+    const res = await fetch(api('/content'), {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
         credentials: 'include',
         cache: 'no-store'
     });
-    if (!res.ok) return;
-
+    if (!res.ok) throw new Error(`Refresh failed ${res.status}`);
     const freshData = await res.json();
-    const latestSha = freshData.sha;
+
+    // The worker already returns parsed array in freshData.content
     const latestArray = Array.isArray(freshData.content) ? freshData.content : [];
+    const latestSha = freshData.sha || '';
 
     if (typeof DATA_SHA === 'string' && DATA_SHA && DATA_SHA !== latestSha) {
+        // Update local data (keep UI + filters stable), then ask user to re-open editor
         DATA = latestArray.map((x, i) => ({ ...x, _index: i }));
         DATA_SHA = latestSha;
         const savedFilters = loadFilterState();
         populateYearOptions(DATA);
         setFilterState(savedFilters);
         applyFilters({ resetPage: false });
+
         throw new Error('Server data updated while you were editing. The list has been refreshed — please re-open the editor.');
     }
 }
@@ -736,17 +739,19 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         });
         if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
         const freshData = await freshRes.json();
+
         const freshArray = Array.isArray(freshData.content) ? freshData.content : [];
-        const freshSha = freshData.sha;
+        const freshSha = freshData.sha || '';
 
         // ---- START: check for server-side updates (prevent 409 loop) ----
-        if (typeof DATA_SHA === 'string' && DATA_SHA && freshSha && DATA_SHA !== freshSha) {
+        if (typeof DATA_SHA === 'string' && DATA_SHA && DATA_SHA !== freshSha) {
             DATA = freshArray.map((x, i) => ({ ...x, _index: i }));
             DATA_SHA = freshSha;
             const savedFilters = loadFilterState();
             populateYearOptions(DATA);
             setFilterState(savedFilters);
             applyFilters({ resetPage: false });
+
             throw new Error('Data on the server changed since you opened the editor. The local list has been updated — please re-open the editor and try again.');
         }
         // ---- END ----
