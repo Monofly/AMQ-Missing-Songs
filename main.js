@@ -73,7 +73,6 @@ let isAdmin = false;
 let SAVE_QUEUE_BUSY = false;
 
 // Persisted filter state
-const FILTER_KEYS = ['q', 'year', 'season', 'type', 'status'];
 function getFilterState() {
     return {
         q: els.q.value,
@@ -912,6 +911,9 @@ function linkOrDash(href, label) {
 }
 
 async function fetchRemoteSha() {
+    // If we already have a local SHA, prefer returning it when meta fails
+    const localSha = (typeof DATA_SHA === 'string' && DATA_SHA.length > 0) ? DATA_SHA : null;
+
     try {
         const res = await fetch(api('/content/meta'), {
             method: 'GET',
@@ -921,16 +923,24 @@ async function fetchRemoteSha() {
             credentials: 'include',
             cache: 'no-store'
         });
-        if (!res.ok)
-            return null;
+        if (!res.ok) {
+            // Graceful fallback: return local SHA to avoid blocking
+            return localSha;
+        }
         const meta = await res.json();
-        return typeof meta.sha === 'string' ? meta.sha : null;
+        const sha = (typeof meta.sha === 'string' && meta.sha.length > 0) ? meta.sha : null;
+        return sha || localSha;
     } catch {
-        return null;
+        // Network issues: also fallback to local SHA
+        return localSha;
     }
 }
 
-async function waitForRemoteShaChange(previousSha, { expectedSha = '', timeoutMs = 15000, intervalMs = 1200 } = {}) {
+async function waitForRemoteShaChange(previousSha, {
+    expectedSha = '',
+    timeoutMs = 15000,
+    intervalMs = 1200
+} = {}) {
     const deadline = Date.now() + timeoutMs;
     let lastSha = null;
 
@@ -1035,21 +1045,31 @@ async function reloadLatestContent() {
 
 async function isFreshAgainstRemoteSha() {
     const remote = await fetchRemoteSha();
-    if (!remote)
-        return {
-            ok: false,
-            reason: 'meta_unavailable'
-        };
-    if (!DATA_SHA)
+    if (!remote && !DATA_SHA) {
         return {
             ok: false,
             reason: 'no_local_sha'
         };
-    if (remote !== DATA_SHA)
+    }
+    if (!remote && DATA_SHA) {
+        // Could not verify remote freshness, but we have a local SHA: proceed with a warning
+        return {
+            ok: true,
+            warning: 'cannot_verify_freshness'
+        };
+    }
+    if (!DATA_SHA) {
+        return {
+            ok: false,
+            reason: 'no_local_sha'
+        };
+    }
+    if (remote !== DATA_SHA) {
         return {
             ok: false,
             reason: 'stale'
         };
+    }
     return {
         ok: true
     };
@@ -1094,9 +1114,9 @@ async function ensureAdminSession() {
 }
 
 async function requireFreshAndAdmin({
-    maxRetries = 2
+    maxRetries = 1
 } = {}) {
-    // First, verify admin session
+    // Verify admin session
     await restoreSession();
     if (!isAdmin) {
         return {
@@ -1105,40 +1125,37 @@ async function requireFreshAndAdmin({
         };
     }
 
-    // Check data freshness with retries
+    // Check data freshness
     let retries = 0;
     while (retries <= maxRetries) {
         try {
             const remoteSha = await fetchRemoteSha();
 
-            if (!remoteSha) {
-                // If we can't get remote SHA, proceed with caution
-                console.warn('Could not fetch remote SHA, proceeding with local data');
+            // If we can't get remote SHA but have local SHA, proceed with caution
+            if (!remoteSha && DATA_SHA) {
                 return {
                     ok: true,
                     warning: 'cannot_verify_freshness'
                 };
             }
 
-            if (remoteSha === DATA_SHA) {
-                // Data is fresh
+            if (remoteSha && DATA_SHA && remoteSha === DATA_SHA) {
                 return {
                     ok: true
                 };
             }
 
-            // Data is stale, try to refresh
+            // Stale: try one refresh if allowed
             if (retries < maxRetries) {
-                console.log(`Data stale (local: ${DATA_SHA}, remote: ${remoteSha}), refreshing...`);
-                const refreshSuccess = await reloadLatestContent();
-                if (refreshSuccess) {
-                    // After refresh, check again in next iteration
-                    retries++;
+                const refreshed = await reloadLatestContent();
+                retries++;
+                if (refreshed) {
+                    // After refresh, re-evaluate once
                     continue;
                 }
             }
 
-            // Refresh failed or max retries reached
+            // Still stale after refresh
             return {
                 ok: false,
                 reason: 'stale_json',
@@ -1146,10 +1163,9 @@ async function requireFreshAndAdmin({
             };
 
         } catch (error) {
-            console.error('Fresh check failed:', error);
             if (retries < maxRetries) {
                 retries++;
-                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                await new Promise(r => setTimeout(r, 1000));
                 continue;
             }
             return {
@@ -1455,7 +1471,11 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
         const committedSha = (commitData && commitData.sha) ? commitData.sha : '';
         let newSha;
         try {
-            newSha = await waitForRemoteShaChange(DATA_SHA, { expectedSha: committedSha, timeoutMs: 15000, intervalMs: 1200 });
+            newSha = await waitForRemoteShaChange(DATA_SHA, {
+                expectedSha: committedSha,
+                timeoutMs: 15000,
+                intervalMs: 1200
+            });
         } catch (e) {
             newSha = null;
         }
