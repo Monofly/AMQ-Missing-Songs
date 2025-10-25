@@ -944,22 +944,11 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
         });
 
         if (res.status === 409) {
-            const shouldRefresh = confirm('A conflict was detected. The data changed in GitHub. Refresh now to continue?');
-            if (shouldRefresh) {
-                location.href = location.origin + '/?r=' + Date.now();
-            } else {
-                throw new Error('Save conflict. Please refresh later.');
-            }
-            return;
+            throw new Error('Save conflict. The data changed in GitHub. Please refresh and try again.');
         }
 
         if (!res.ok) {
             const txt = await res.text().catch(() => '');
-            const shouldRefresh = confirm(`Save failed: ${res.status}. Refresh the page to retry?`);
-            if (shouldRefresh) {
-                location.href = location.origin + '/?r=' + Date.now();
-                return;
-            }
             throw new Error(`Save failed: ${res.status} ${txt}`);
         }
 
@@ -969,6 +958,13 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = changeObj === null ? 'Deleted.' : 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
+        
+        return { success: true };
+    } catch (err) {
+        els.saveNotice.classList.remove('saving');
+        els.saveNotice.textContent = 'Error: ' + (err.message || err);
+        els.saveNotice.classList.add('error');
+        throw err;
     } finally {
         els.saveBtn && (els.saveBtn.disabled = false);
     }
