@@ -441,28 +441,40 @@ async function init() {
         await ensureAdminSession();
         updateAdminVisibility();
 
-        // Always load current content (no forced “fresh” here)
+        // Try normal load first, but be more aggressive about freshness
+        let loadedFromCache = false;
         const res = await fetch(api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             credentials: 'include',
             cache: 'no-store'
         });
+        
         if (!res.ok) throw new Error(`Load error ${res.status}`);
+        
         const data = await res.json();
         const raw = data.content;
         DATA_SHA = data.sha;
+
+        // Always check for updates but don't get stuck in a loop
         try {
-            // Ask server for the remote SHA (meta) and if different, force a fresh load
             const remoteSha = await fetchRemoteSha();
             if (remoteSha && remoteSha !== DATA_SHA) {
                 console.log('Local data SHA differs from remote; forcing fresh load.', DATA_SHA, remoteSha);
-                await reloadLatestContent(); // existing helper does the fresh fetch + re-render
-                return; // stop the rest of this init() run; reloadLatestContent will re-init UI state
+                // Use a timeout to prevent blocking the UI
+                setTimeout(async () => {
+                    try {
+                        await reloadLatestContent();
+                    } catch (e) {
+                        console.warn('Background refresh failed:', e);
+                    }
+                }, 100);
+                // Continue with current data instead of waiting
             }
         } catch (e) {
             console.warn('SHA check failed (non-fatal):', e);
         }
+
         DATA = (raw || []).map((x, i) => {
             const item = {
                 anime_en: '', anime_romaji: '',
@@ -482,7 +494,6 @@ async function init() {
                _index: i
             };
     
-            // FORCE ensure ID exists for every item
             if (!item.id || item.id.trim() === '') {
                 const rand = Math.random().toString(16).slice(2, 10);
                 item.id = `${Date.now()}-${rand}`;
@@ -491,7 +502,6 @@ async function init() {
             return item;
         });
 
-        // Ensure ALL items have IDs immediately, not just when admin
         DATA = DATA.map(it => { 
             ensurePersistentId(it); 
             return it;
@@ -500,13 +510,8 @@ async function init() {
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
-        // NOTE: previously auto-fixed missing IDs on load (caused surprise commits and reloads).
-        // We disable automatic commits here — admins can use the "Fix missing IDs" button manually.
-            // await fixMissingIdsIfAdmin();
-
         populateYearOptions(DATA);
 
-        // Restore filters before wiring events
         const saved = loadFilterState();
         setFilterState(saved);
 
@@ -523,7 +528,6 @@ async function init() {
 
         wireAdminBar();
 
-        // Pager controls
         if (els.prevPageBtn && els.nextPageBtn && els.pageInput) {
             els.prevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
             els.nextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
@@ -531,7 +535,7 @@ async function init() {
             const tryInputPage = () => {
                 const n = Number.parseInt(els.pageInput.value, 10);
                 if (!Number.isFinite(n)) return;
-                goToPage(n); // clampPage will fix <=0 => 1 and >max => max
+                goToPage(n);
             };
             els.pageInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') tryInputPage();
@@ -539,7 +543,6 @@ async function init() {
             els.pageInput.addEventListener('blur', tryInputPage);
         }
 
-        // Top pager controls
         if (els.topPrevPageBtn && els.topNextPageBtn && els.topPageInput) {
             els.topPrevPageBtn.addEventListener('click', () => goToPage(currentPage - 1));
             els.topNextPageBtn.addEventListener('click', () => goToPage(currentPage + 1));
@@ -547,7 +550,7 @@ async function init() {
             const tryTopInputPage = () => {
                 const n = Number.parseInt(els.topPageInput.value, 10);
                 if (!Number.isFinite(n)) return;
-                goToPage(n); // clampPage ensures bounds
+                goToPage(n);
             };
             els.topPageInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') tryTopInputPage();
@@ -555,12 +558,11 @@ async function init() {
             els.topPageInput.addEventListener('blur', tryTopInputPage);
         }
 
-        // Make sure toolbar matches the default (not signed in) state immediately:
         updateAdminVisibility();
         applyFilters({ resetPage: true });
         setToolbarHeight();
     } catch (e) {
-        // First fallback: try a fresh content fetch to bypass cache/CDN inconsistencies
+        console.error('Initial load failed, trying fresh load:', e);
         try {
             const res2 = await fetch(freshApi('/content'), {
                 method: 'GET',
@@ -595,7 +597,6 @@ async function init() {
             });
             DATA.sort(compareItems);
             DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
-            // await fixMissingIdsIfAdmin();
             populateYearOptions(DATA);
             const saved = loadFilterState();
             setFilterState(saved);
@@ -603,10 +604,9 @@ async function init() {
             updateAdminVisibility();
             applyFilters({ resetPage: true });
             setToolbarHeight();
-            return; // success via fresh path
         } catch (freshErr) {
-            // Show an actionable UI with a Retry button and a tip
-            els.count.textContent = 'Could not load data/anime_songs.json';
+            console.error('All load attempts failed:', freshErr);
+            els.count.textContent = 'Could not load data';
             els.rows.innerHTML = `
                   <tr>
                     <td colspan="5">
@@ -614,7 +614,7 @@ async function init() {
                         <span class="notice error">Failed to load data.</span>
                         <div class="retry-row">
                           <button class="btn" id="retryBtn">Retry</button>
-                          <span class="notice">Tip: If this keeps failing, wait a minute and try again.</span>
+                          <span class="notice">The server may be temporarily unavailable.</span>
                         </div>
                       </div>
                     </td>
@@ -622,8 +622,7 @@ async function init() {
             const retry = document.getElementById('retryBtn');
             if (retry) {
                 retry.addEventListener('click', () => {
-                    // Force a fresh read with a timestamp
-                    location.href = location.origin + '/?r=' + Date.now();
+                    location.reload();
                 });
             }
             updateAdminVisibility();
@@ -660,6 +659,29 @@ function wireAdminBar() {
         location.reload();
     });
 
+    // Add refresh button handler
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.disabled = true;
+            refreshBtn.textContent = 'Refreshing...';
+            try {
+                await reloadLatestContent();
+                refreshBtn.textContent = 'Refreshed!';
+                setTimeout(() => {
+                    refreshBtn.textContent = 'Refresh Data';
+                    refreshBtn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                refreshBtn.textContent = 'Failed!';
+                setTimeout(() => {
+                    refreshBtn.textContent = 'Refresh Data';
+                    refreshBtn.disabled = false;
+                }, 2000);
+            }
+        });
+    }
+
     els.addBtn.addEventListener('click', async () => {
         await restoreSession();
         if (!isAdmin) { alert('You are not authorized to add.'); return; }
@@ -668,21 +690,26 @@ function wireAdminBar() {
 }
 
 function updateAdminVisibility() {
+    const refreshBtn = document.getElementById('refreshBtn');
+    
     if (currentUser && isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login}`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         show(els.addBtn);
+        if (refreshBtn) show(refreshBtn);
     } else if (currentUser && !isAdmin) {
         els.loginStatus.textContent = `Signed in as ${currentUser.login} (no write access)`;
         hide(els.loginBtn);
         show(els.logoutBtn);
         hide(els.addBtn);
+        if (refreshBtn) hide(refreshBtn);
     } else {
         els.loginStatus.textContent = 'Not signed in';
         show(els.loginBtn);
         hide(els.logoutBtn);
         hide(els.addBtn);
+        if (refreshBtn) hide(refreshBtn);
     }
     setToolbarHeight();
 }
@@ -738,42 +765,53 @@ async function fetchRemoteSha() {
 }
 
 async function reloadLatestContent() {
-    const res = await fetch(freshApi('/content'), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store'
-    });
-    if (!res.ok) throw new Error(`Refresh load error ${res.status}`);
-    const data = await res.json();
-    const raw = data.content;
-    DATA_SHA = data.sha;
+    try {
+        const res = await fetch(freshApi('/content'), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (!res.ok) throw new Error(`Refresh load error ${res.status}`);
+        const data = await res.json();
+        const raw = data.content;
+        DATA_SHA = data.sha;
 
-    DATA = (raw || []).map((x, i) => ({
-        anime_en: '', anime_romaji: '',
-        year: '', season: 'Winter',
-        type: 'OP',
-        song_title_romaji: '', song_title_original: '',
-        artist_romaji: '', artist_original: '',
-        composer_romaji: '', composer_original: '',
-        arranger_romaji: '', arranger_original: '',
-        episode: '', time_start: '', time_end: '',
-        unidentified: false,
-        clean_available: true,
-        ann_url: '', mal_url: '',
-        issues: [],
-        notes: '',
-        ...x,
-        _index: i
-    }));
+        DATA = (raw || []).map((x, i) => ({
+            anime_en: '', anime_romaji: '',
+            year: '', season: 'Winter',
+            type: 'OP',
+            song_title_romaji: '', song_title_original: '',
+            artist_romaji: '', artist_original: '',
+            composer_romaji: '', composer_original: '',
+            arranger_romaji: '', arranger_original: '',
+            episode: '', time_start: '', time_end: '',
+            unidentified: false,
+            clean_available: true,
+            ann_url: '', mal_url: '',
+            issues: [],
+            notes: '',
+            ...x,
+            _index: i
+        }));
 
-    DATA = DATA.map(it => { ensurePersistentId(it); return it; });
-    DATA.sort(compareItems);
-    DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
+        DATA = DATA.map(it => { 
+            ensurePersistentId(it); 
+            return it;
+        });
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
-    populateYearOptions(DATA);
-    applyFilters({ resetPage: false });
-    setToolbarHeight();
+        populateYearOptions(DATA);
+        applyFilters({ resetPage: false });
+        setToolbarHeight();
+        
+        return true;
+    } catch (error) {
+        console.error('Failed to reload latest content:', error);
+        // Don't throw error, just log it and continue with existing data
+        return false;
+    }
 }
 
 async function isFreshAgainstRemoteSha() {
@@ -829,17 +867,39 @@ async function requireFreshAndAdmin({ retries = 1, delayMs = 500 } = {}) {
         return { ok: false, reason: 'not_admin' };
     }
     
-    // Only check JSON freshness, don't auto-retry
-    const fresh = await isFreshAgainstRemoteSha();
-    if (!fresh.ok && fresh.reason === 'stale') {
+    // Check JSON freshness with timeout protection
+    try {
+        const fresh = await isFreshAgainstRemoteSha();
+        if (!fresh.ok && fresh.reason === 'stale') {
+            // Try to refresh in background but don't block the user
+            const refreshSuccess = await reloadLatestContent();
+            if (!refreshSuccess) {
+                return { 
+                    ok: false, 
+                    reason: 'stale_json', 
+                    message: 'Your local list is outdated and could not be refreshed automatically. Please refresh the page.' 
+                };
+            }
+            // After refresh, check again
+            const freshAfterRefresh = await isFreshAgainstRemoteSha();
+            if (!freshAfterRefresh.ok) {
+                return { 
+                    ok: false, 
+                    reason: 'stale_json', 
+                    message: 'Your local list is still outdated after refresh. Please try again.' 
+                };
+            }
+        }
+        
+        return { ok: true };
+    } catch (error) {
+        console.error('Fresh check failed:', error);
         return { 
             ok: false, 
-            reason: 'stale_json', 
-            message: 'Your local list is outdated. Please refresh and try again.' 
+            reason: 'check_failed', 
+            message: 'Could not verify data freshness. Please try again.' 
         };
     }
-    
-    return { ok: true };
 }
 
 async function loginWithGitHub() {
