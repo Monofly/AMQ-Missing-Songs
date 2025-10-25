@@ -372,6 +372,8 @@ export default {
         }
 
         async function getContent(cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
+            // Always define the CDN cache key up front so it's in scope everywhere in this function
+            const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
             const isFresh = (new URL(req.url).searchParams.get('fresh') === '1');
             const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
 
@@ -381,7 +383,6 @@ export default {
 
             // 1) Try CDN cache first (fast path)
             if (!isFresh) {
-                const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
                 const cached = await caches.default.match(cacheKey);
                 if (cached) {
                     const body = await cached.text();
@@ -429,7 +430,7 @@ export default {
                 });
                 if (!res2.ok) {
                     const text2 = await res2.text().catch(() => '');
-                    return json({ error: 'Failed to load content: GitHub ' + res2.status + ': ' + text2 }, 500, cors);
+                    return json({ error: 'Failed to load content', source: 'github-refetch', status: res2.status, detail: text2 || '' }, 500, cors);
                 }
 
                 const text2 = await res2.text();
@@ -474,7 +475,7 @@ export default {
             // Any non-2xx, non-304 => error
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                return json({ error: 'Failed to load content: GitHub ' + res.status + ': ' + text }, 500, cors);
+                return json({ error: 'Failed to load content', source: 'github', status: res.status, detail: text || '' }, 500, cors);
             }
 
             // 200 OK with fresh content

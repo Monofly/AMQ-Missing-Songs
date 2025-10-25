@@ -506,10 +506,70 @@ async function init() {
         applyFilters({ resetPage: true });
         setToolbarHeight();
     } catch (e) {
-        els.count.textContent = 'Could not load data/anime_songs.json';
-        els.rows.innerHTML = '<tr><td colspan="5"><span class="notice error">Failed to load data. Please refresh the page. If it keeps failing, try again later.</span></td></tr>';
-        updateAdminVisibility();
-        updatePagerUI();
+        // First fallback: try a fresh content fetch to bypass cache/CDN inconsistencies
+        try {
+            const res2 = await fetch(freshApi('/content'), {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (!res2.ok) throw new Error(`Fresh load error ${res2.status}`);
+            const data2 = await res2.json();
+            const raw2 = data2.content;
+            DATA_SHA = data2.sha;
+            DATA = (raw2 || []).map((x, i) => ({
+                anime_en: '', anime_romaji: '',
+                year: '', season: 'Winter',
+                type: 'OP',
+                song_title_romaji: '', song_title_original: '',
+                artist_romaji: '', artist_original: '',
+                composer_romaji: '', composer_original: '',
+                arranger_romaji: '', arranger_original: '',
+                episode: '', time_start: '', time_end: '',
+                unidentified: false,
+                clean_available: true,
+                ann_url: '', mal_url: '',
+                issues: [],
+                notes: '',
+                ...x,
+                _index: i
+            }));
+            DATA.sort(compareItems);
+            DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+            populateYearOptions(DATA);
+            const saved = loadFilterState();
+            setFilterState(saved);
+            wireAdminBar();
+            updateAdminVisibility();
+            applyFilters({ resetPage: true });
+            setToolbarHeight();
+            return; // success via fresh path
+        } catch (freshErr) {
+            // Show an actionable UI with a Retry button and a tip
+            els.count.textContent = 'Could not load data/anime_songs.json';
+            els.rows.innerHTML = `
+                  <tr>
+                    <td colspan="5">
+                      <div class="mono">
+                        <span class="notice error">Failed to load data.</span>
+                        <div class="retry-row">
+                          <button class="btn" id="retryBtn">Retry</button>
+                          <span class="notice">Tip: If this keeps failing, wait a minute and try again.</span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>`;
+            const retry = document.getElementById('retryBtn');
+            if (retry) {
+                retry.addEventListener('click', () => {
+                    // Force a fresh read with a timestamp
+                    location.href = location.origin + '/?r=' + Date.now();
+                });
+            }
+            updateAdminVisibility();
+            updatePagerUI();
+        }
     }
 }
 

@@ -246,6 +246,13 @@ footer {
     /* matches .grid / .grid-3 gap = 10px */
 }
 
+.retry-row {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .notice.error {
     color: var(--bad);
 }
