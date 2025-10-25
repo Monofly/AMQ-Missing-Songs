@@ -733,7 +733,7 @@ function entryKey(it) {
 }
 
 // Merge new change into the freshest data from server
-async function commitJsonWithRefresh(changeObj, index, commitMessage) {
+async function commitJsonWithRefresh(changeObj, index, commitMessage, originalItemForKey) {
     els.saveBtn.disabled = true;
     show(els.saveNotice);
     els.saveNotice.textContent = 'Saving…';
@@ -771,10 +771,11 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 
         let targetKey;
         if (index === null) {
-            targetKey = changeObj ? entryKey(changeObj) : null; // null when deleting new → not allowed
+            targetKey = changeObj ? entryKey(changeObj) : null;
         } else {
-            const currentIt = DATA[index];
-            targetKey = entryKey(currentIt);
+            // Use the ORIGINAL item (before local optimistic update) to build the matching key.
+            const base = originalItemForKey || DATA[index];
+            targetKey = entryKey(base);
         }
 
         let newArray = freshArray.slice();
@@ -819,7 +820,6 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         });
 
         if (res.status === 409) {
-            const j = await res.json().catch(() => ({}));
             const freshRes2 = await fetch(freshApi('/content'), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' },
@@ -1166,6 +1166,7 @@ els.editForm.addEventListener('submit', async (e) => {
     els.modalNotice.classList.remove('error');
 
     const { out, index } = readForm();
+    const originalForKey = index === null ? null : { ...DATA[index] };
 
     // Validate minimal things
     if (out.year !== '' && (!Number.isFinite(out.year) || String(out.year).length !== 4)) {
@@ -1201,7 +1202,7 @@ els.editForm.addEventListener('submit', async (e) => {
 
     try {
         const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
-        await commitJsonWithRefresh(out, index, msg);
+        await commitJsonWithRefresh(out, index, msg, originalForKey);
         clearDraft(index === null ? null : index);
         els.editForm.reset();
         closeEditor();
