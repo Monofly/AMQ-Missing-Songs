@@ -675,6 +675,30 @@ function linkOrDash(href, label) {
     return safe ? `<a class="link" target="_blank" rel="noopener noreferrer" href="${safe}">${label}</a>` : '—';
 }
 
+async function fetchRemoteSha() {
+    try {
+        const res = await fetch(api('/content/meta'), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (!res.ok) return null;
+        const meta = await res.json();
+        return typeof meta.sha === 'string' ? meta.sha : null;
+    } catch {
+        return null;
+    }
+}
+
+async function isFreshAgainstRemoteSha() {
+    const remote = await fetchRemoteSha();
+    if (!remote) return { ok: false, reason: 'meta_unavailable' };
+    if (!DATA_SHA) return { ok: false, reason: 'no_local_sha' };
+    if (remote !== DATA_SHA) return { ok: false, reason: 'stale' };
+    return { ok: true };
+}
+
 async function restoreSession() {
     // Ask worker who we are (uses cookie)
     try {
@@ -709,33 +733,6 @@ async function restoreSession() {
     updateAdminVisibility();
 }
 
-async function ensureFreshData() {
-    const res = await fetch(freshApi('/content'), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store'
-    });
-    if (!res.ok) throw new Error(`Refresh failed ${res.status}`);
-    const freshData = await res.json();
-
-    // The worker already returns parsed array in freshData.content
-    const latestArray = Array.isArray(freshData.content) ? freshData.content : [];
-    const latestSha = freshData.sha || '';
-
-    if (typeof DATA_SHA === 'string' && DATA_SHA && DATA_SHA !== latestSha) {
-        // Update local data (keep UI + filters stable), then ask user to re-open editor
-        DATA = latestArray.map((x, i) => ({ ...x, _index: i }));
-        DATA_SHA = latestSha;
-        const savedFilters = loadFilterState();
-        populateYearOptions(DATA);
-        setFilterState(savedFilters);
-        applyFilters({ resetPage: false });
-
-        throw new Error('Server data updated while you were editing. The list has been refreshed — please re-open the editor.');
-    }
-}
-
 // Lightweight guard to restore admin session and update UI labels
 async function ensureAdminSession() {
     await restoreSession(); // updates currentUser + isAdmin + toolbar text
@@ -751,18 +748,17 @@ async function requireFreshAndAdmin({ retries = 2, delayMs = 700 } = {}) {
     if (!admin) {
         return { ok: false, reason: 'not_admin' };
     }
-    // Retry freshness in case CDN serves stale for a moment
     for (let i = 0; i <= retries; i++) {
-        try {
-            await ensureFreshData();
-            return { ok: true };
-        } catch (err) {
-            if (i < retries) {
-                await new Promise(r => setTimeout(r, delayMs));
-                continue;
-            }
-            return { ok: false, reason: 'stale_json', message: String(err.message || err) };
+        const fresh = await isFreshAgainstRemoteSha();
+        if (fresh.ok) return { ok: true };
+        if (i < retries) {
+            await new Promise(r => setTimeout(r, delayMs));
+            continue;
         }
+        if (fresh.reason === 'stale') {
+            return { ok: false, reason: 'stale_json', message: 'Your local list is outdated. Please refresh and try again.' };
+        }
+        return { ok: false, reason: fresh.reason || 'unknown' };
     }
     return { ok: false, reason: 'unknown' };
 }
@@ -1015,6 +1011,11 @@ function buildPresetFromShow(it) {
 
 async function openEditor(index, preset) {
     await restoreSession();
+    const freshCheck = await isFreshAgainstRemoteSha();
+    if (!freshCheck.ok) {
+        alert('Your local list is outdated. Please refresh the page, then try again.');
+       return;
+    }
     if (!isAdmin) {
         alert('You are not currently signed in with write access. Please sign in again.');
         return;
@@ -1237,6 +1238,12 @@ els.editForm.addEventListener('submit', async (e) => {
 
 async function confirmDelete(index) {
     await restoreSession();
+    const freshCheck = await isFreshAgainstRemoteSha();
+    if (!freshCheck.ok) {
+        alert('Your local list is outdated. Please refresh the page, then try again.');
+        return;
+    }
+
     if (!isAdmin) {
         alert('You are not currently signed in with write access. Please sign in again.');
         return;

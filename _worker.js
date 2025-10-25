@@ -10,6 +10,7 @@ export default {
             '/auth/me',
             '/logout',
             '/content',
+            '/content/meta',
             '/commit'
         ]);
 
@@ -271,6 +272,30 @@ export default {
             }
             if (req.method === 'GET' && url.pathname === '/content') {
                 return getContent(corsBase, OWNER, REPO, BRANCH, CONTENT_PATH);
+            }
+            if (req.method === 'GET' && url.pathname === '/content/meta') {
+                // Returns only the latest SHA for freshness checks (no body reload)
+                const OWNER = env.OWNER || 'Monofly';
+                const REPO = env.REPO || 'AMQ-Missing-Songs-Data';
+                const BRANCH = env.BRANCH || 'main';
+                const CONTENT_PATH = env.CONTENT_PATH || 'data/anime_songs.json';
+
+                const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
+
+                const headers = new Headers({
+                    'Accept': 'application/vnd.github+json',
+                    'User-Agent': 'monofly-anime-songs-worker'
+                });
+                if (env.GH_READ_TOKEN) headers.set('Authorization', `Bearer ${env.GH_READ_TOKEN}`);
+
+                const res = await fetch(apiUrl, { headers, cache: 'no-store' });
+                if (!res.ok) {
+                    const text = await res.text().catch(() => '');
+                    return json({ error: 'Failed to load meta', source: 'github', status: res.status, detail: text || '' }, 500, corsBase);
+                }
+                const meta = await res.json().catch(() => ({}));
+                const sha = meta?.sha || '';
+                return json({ sha }, 200, corsBase, { 'Cache-Control': 'no-store' });
             }
             if (req.method === 'POST' && url.pathname === '/commit') {
                 const rl = rateLimit(req, '/commit');

@@ -257,8 +257,8 @@ footer {
     color: var(--bad);
 }
 
-.notice.success {
-    color: var(--ok);
+.notice.stale {
+    color: var(--warn);
 }
 
 .form-draft-note {
