@@ -281,13 +281,13 @@ function renderRows(items, totalFilteredCount = items.length) {
         const idx = it._index; // stable index we attach during normalization
         const rowActionsAnime = isAdmin ? `
           <div class="row-actions">
-            <button class="btn" data-add-from-uid="${it._uid}">Add Entry From This Show</button>
+            <button class="btn" data-add-from-id="${it.id}">Add Entry From This Show</button>
           </div>` : '';
 
         const rowActionsSong = isAdmin ? `
           <div class="row-actions">
-            <button class="btn secondary" data-edit-uid="${it._uid}">Edit</button>
-            <button class="btn danger" data-delete-uid="${it._uid}">Delete</button>
+            <button class="btn secondary" data-edit-id="${it.id}">Edit</button>
+            <button class="btn danger" data-delete-id="${it.id}">Delete</button>
           </div>` : '';
 
         return `<tr>
@@ -309,30 +309,30 @@ function renderRows(items, totalFilteredCount = items.length) {
     }).join('');
 
     if (isAdmin) {
-        els.rows.querySelectorAll('[data-edit-uid]').forEach(btn => {
+        els.rows.querySelectorAll('[data-edit-id]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 await restoreSession();
                 if (!isAdmin) { alert('You are not authorized to edit.'); return; }
-                const uid = btn.getAttribute('data-edit-uid');
-                const index = DATA.findIndex(x => x._uid === uid);
+                const id = btn.getAttribute('data-edit-id');
+                const index = DATA.findIndex(x => x.id === id);
                 if (index < 0) { alert('Item not found. Try refreshing.'); return; }
                 openEditor(index);
             });
         });
-        els.rows.querySelectorAll('[data-delete-uid]').forEach(btn => {
+        els.rows.querySelectorAll('[data-delete-id]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const uid = btn.getAttribute('data-delete-uid');
-                const index = DATA.findIndex(x => x._uid === uid);
+                const id = btn.getAttribute('data-delete-id');
+                const index = DATA.findIndex(x => x.id === id);
                 if (index < 0) { alert('Item not found. Try refreshing.'); return; }
                 confirmDelete(index);
             });
         });
-        els.rows.querySelectorAll('[data-add-from-uid]').forEach(btn => {
+        els.rows.querySelectorAll('[data-add-from-id]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 await restoreSession();
                 if (!isAdmin) { alert('You are not authorized to add.'); return; }
-                const uid = btn.getAttribute('data-add-from-uid');
-                const i = DATA.findIndex(x => x._uid === uid);
+                const id = btn.getAttribute('data-add-from-id');
+                const i = DATA.findIndex(x => x.id === id);
                 if (i < 0) { alert('Item not found. Try refreshing.'); return; }
                 openEditor(null, buildPresetFromShow(DATA[i]));
             });
@@ -457,6 +457,8 @@ async function init() {
             _index: i
         }));
 
+        DATA = DATA.map(it => { ensurePersistentId(it); return it; });
+
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
@@ -545,6 +547,7 @@ async function init() {
                 ...x,
                 _index: i
             }));
+            DATA = DATA.map(it => { ensurePersistentId(it); return it; });
             DATA.sort(compareItems);
             DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
             populateYearOptions(DATA);
@@ -846,82 +849,45 @@ function uidFor(it, fallbackIndex) {
     return entryKey(it) + '|' + String(fallbackIndex ?? '');
 }
 
+function ensurePersistentId(it) {
+    if (typeof it.id === 'string' && it.id.trim().length > 0) return it.id;
+    // Simple collision-resistant id: timestamp + 8 random hex chars
+    const rand = Math.random().toString(16).slice(2, 10);
+    const id = `${Date.now()}-${rand}`;
+    it.id = id;
+    return id;
+}
+
 // Merge new change into the freshest data from server
 async function commitJsonWithRefresh(changeObj, index, commitMessage, originalItemForKey) {
     els.saveBtn.disabled = true;
     show(els.saveNotice);
     els.saveNotice.textContent = 'Saving…';
     els.saveNotice.classList.add('saving');
+
     try {
         await ensureCsrf();
 
-        const freshRes = await fetch(freshApi('/content'), {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            credentials: 'include',
-            cache: 'no-store'
-        });
-        if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
-        const freshData = await freshRes.json();
+        // Build payload from current local DATA without reloading JSON
+        let working = DATA.slice();
 
-        const freshArray = Array.isArray(freshData.content) ? freshData.content : [];
-        const freshSha = freshData.sha || '';
-
-        // ---- START: check for server-side updates (prevent 409 loop) ----
-        if (typeof DATA_SHA === 'string' && DATA_SHA && DATA_SHA !== freshSha) {
-            DATA = freshArray.map((x, i) => ({ ...x, _index: i }));
-            DATA_SHA = freshSha;
-            const savedFilters = loadFilterState();
-            populateYearOptions(DATA);
-            setFilterState(savedFilters);
-            applyFilters({ resetPage: false });
-
-            throw new Error('Data on the server changed since you opened the editor. The local list has been updated — please re-open the editor and try again.');
-        }
-        // ---- END ----
-
-        const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
-        const freshKeys = new Map(freshWithIndex.map(x => [entryKey(x), x._index]));
-
-        let targetKey;
         if (index === null) {
-            targetKey = changeObj ? entryKey(changeObj) : null;
-        } else {
-            // Use the ORIGINAL item (before local optimistic update) to build the matching key.
-            const base = originalItemForKey || DATA[index];
-            targetKey = entryKey(base);
-        }
-
-        let newArray = freshArray.slice();
-
-        // Handle add/edit/delete distinctly
-        if (index === null) {
-            if (changeObj === null) {
-                throw new Error('Cannot delete a new unsaved entry.');
-            }
+            if (changeObj === null) throw new Error('Cannot delete a new unsaved entry.');
             // Add
-            newArray.push(changeObj);
+            working.push(changeObj);
         } else {
-            const matchIdx = freshKeys.has(targetKey) ? freshKeys.get(targetKey) : null;
             if (changeObj === null) {
                 // Delete
-                if (matchIdx === null || matchIdx === undefined) {
-                    // If not found in fresh, nothing to delete
-                } else {
-                    newArray.splice(matchIdx, 1);
-                }
+                working.splice(index, 1);
             } else {
-                // Edit
-                if (matchIdx === null || matchIdx === undefined) {
-                    // If not found, treat as add to avoid losing data
-                    newArray.push(changeObj);
-                } else {
-                    newArray[matchIdx] = { ...newArray[matchIdx], ...changeObj };
-                }
+                // Edit by index (we preserved id earlier)
+                working[index] = { ...working[index], ...changeObj };
             }
         }
 
-        const payloadArray = newArray.map(({ _index, ...rest }) => rest);
+        // Clean transient fields out of payload
+        const payloadArray = working.map(({ _index, _uid, ...rest }) => rest);
+
         const res = await fetch(api('/commit'), {
             method: 'POST',
             headers: {
@@ -930,97 +896,37 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
                 'X-CSRF-Token': CSRF
             },
             credentials: 'include',
-            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: freshSha })
+            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: DATA_SHA })
         });
 
         if (res.status === 409) {
-            const freshRes2 = await fetch(freshApi('/content'), {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                credentials: 'include',
-                cache: 'no-store'
-            });
-            if (!freshRes2.ok) throw new Error(`Refresh failed ${freshRes2.status}`);
-            const freshData2 = await freshRes2.json();
-            const freshArray2 = freshData2.content;
-            const freshSha2 = freshData2.sha;
-            const fresh2WithIndex = freshArray2.map((x, i) => ({ ...x, _index: i }));
-            const fresh2Keys = new Map(fresh2WithIndex.map(x => [entryKey(x), x._index]));
-            let newArray2 = freshArray2.slice();
-
-            const matchIdx2 = index === null ? null : (fresh2Keys.has(targetKey) ? fresh2Keys.get(targetKey) : null);
-
-            if (index === null) {
-                if (changeObj === null) {
-                    throw new Error('Cannot delete a new unsaved entry.');
-                }
-                newArray2.push(changeObj);
+            const shouldRefresh = confirm('A conflict was detected. The data changed in GitHub. Refresh now to continue?');
+            if (shouldRefresh) {
+                location.href = location.origin + '/?r=' + Date.now();
             } else {
-                if (changeObj === null) {
-                    if (matchIdx2 === null || matchIdx2 === undefined) {
-                        // nothing to delete
-                    } else {
-                        newArray2.splice(matchIdx2, 1);
-                    }
-                } else {
-                    if (matchIdx2 === null || matchIdx2 === undefined) {
-                        newArray2.push(changeObj);
-                    } else {
-                        newArray2[matchIdx2] = { ...newArray2[matchIdx2], ...changeObj };
-                    }
-                }
+                throw new Error('Save conflict. Please refresh later.');
             }
-
-            const payloadArray2 = newArray2.map(({ _index, ...rest }) => rest);
-            const res2 = await fetch(api('/commit'), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-Token': CSRF
-                },
-                credentials: 'include',
-                body: JSON.stringify({ content: payloadArray2, message: commitMessage, baseSha: freshSha2 })
-            });
-
-            if (!res2.ok) {
-                const txt2 = await res2.text().catch(() => '');
-                throw new Error(`Save failed (retry): ${res2.status} ${txt2}`);
-            }
-            
-            const commitData2 = await res2.json();
-
-            // 1) Update local SHA immediately
-            if (commitData2.sha) {
-                DATA_SHA = commitData2.sha;
-            }
-
-            // 2) Finish the Save UI instantly
-            els.saveNotice.classList.remove('saving');
-            els.saveNotice.textContent = 'Saved.';
-
-            setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
             return;
         }
 
         if (!res.ok) {
             const txt = await res.text().catch(() => '');
+            const shouldRefresh = confirm(`Save failed: ${res.status}. Refresh the page to retry?`);
+            if (shouldRefresh) {
+                location.href = location.origin + '/?r=' + Date.now();
+                return;
+            }
             throw new Error(`Save failed: ${res.status} ${txt}`);
         }
 
         const commitData = await res.json();
-
-        // 1) Update local SHA immediately (so future freshness checks compare correctly)
         if (commitData.sha) {
             DATA_SHA = commitData.sha;
         }
 
-        // 2) Finish the Save UI instantly
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
-
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
-
     } finally {
         els.saveBtn.disabled = false;
     }
@@ -1108,14 +1014,9 @@ function buildPresetFromShow(it) {
 }
 
 async function openEditor(index, preset) {
-    // Use the centralized guard: admin + latest JSON with small retry
-    const guard = await requireFreshAndAdmin();
-    if (!guard.ok) {
-        if (guard.reason === 'not_admin') {
-            alert('You are not currently signed in with write access. Please sign in again.');
-        } else {
-            alert(guard.message || 'Could not refresh latest data. Please try again.');
-        }
+    await restoreSession();
+    if (!isAdmin) {
+        alert('You are not currently signed in with write access. Please sign in again.');
         return;
     }
     els.modalNotice.textContent = '';
@@ -1303,19 +1204,20 @@ els.editForm.addEventListener('submit', async (e) => {
     if (index === null) {
         // Optimistic add
         const newItem = { ...out, _index: DATA.length };
-        newItem._uid = uidFor(newItem, newItem._index);
+        ensurePersistentId(newItem);
         DATA.push(newItem);
     } else {
         // Optimistic edit
-        DATA[index] = { ...DATA[index], ...out };
-        DATA[index]._uid = DATA[index]._uid || uidFor(DATA[index], index);
+        const existingId = DATA[index].id;
+        DATA[index] = { ...DATA[index], ...out, id: existingId };
     }
+
     // Defer heavy sorting/indexing slightly to keep UI responsive on Save.
     // The current page updates instantly; resort happens a moment later.
     applyFilters({ resetPage: false });
     setTimeout(() => {
         DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: item._uid || uidFor(item, i) }));
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
     }, 50);
 
@@ -1334,13 +1236,9 @@ els.editForm.addEventListener('submit', async (e) => {
 });
 
 async function confirmDelete(index) {
-    const guard = await requireFreshAndAdmin();
-    if (!guard.ok) {
-        if (guard.reason === 'not_admin') {
-            alert('You are not currently signed in with write access. Please sign in again.');
-        } else {
-            alert(guard.message || 'Could not refresh latest data. Please try again.');
-        }
+    await restoreSession();
+    if (!isAdmin) {
+        alert('You are not currently signed in with write access. Please sign in again.');
         return;
     }
 
@@ -1356,7 +1254,7 @@ async function confirmDelete(index) {
     SAVE_QUEUE_BUSY = true;
 
     // Disable all delete buttons temporarily
-    document.querySelectorAll('[data-delete]').forEach(b => b.disabled = true);
+    document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
 
     try {
         const msg = `Delete entry at index ${index}`;
@@ -1364,7 +1262,7 @@ async function confirmDelete(index) {
         // Optimistically update local DATA immediately
         DATA.splice(index, 1);
         DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: item._uid || uidFor(item, i) }));
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
 
         // Commit without rechecking JSON during delete
@@ -1378,7 +1276,7 @@ async function confirmDelete(index) {
         // Not required by your instruction, so we leave UI as-is.
     } finally {
         // Re-enable delete buttons
-        document.querySelectorAll('[data-delete]').forEach(b => b.disabled = false);
+        document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = false);
         SAVE_QUEUE_BUSY = false;
     }
 }
