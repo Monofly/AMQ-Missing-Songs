@@ -474,6 +474,8 @@ async function init() {
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
+        await fixMissingIdsIfAdmin();
+
         populateYearOptions(DATA);
 
         // Restore filters before wiring events
@@ -562,6 +564,7 @@ async function init() {
             DATA = DATA.map(it => { ensurePersistentId(it); return it; });
             DATA.sort(compareItems);
             DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
+            await fixMissingIdsIfAdmin();
             populateYearOptions(DATA);
             const saved = loadFilterState();
             setFilterState(saved);
@@ -892,11 +895,70 @@ function uidFor(it, fallbackIndex) {
 
 function ensurePersistentId(it) {
     if (typeof it.id === 'string' && it.id.trim().length > 0) return it.id;
-    // Simple collision-resistant id: timestamp + 8 random hex chars
     const rand = Math.random().toString(16).slice(2, 10);
     const id = `${Date.now()}-${rand}`;
     it.id = id;
     return id;
+}
+
+async function fixMissingIdsIfAdmin() {
+    const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
+    
+    if (itemsWithoutIds.length === 0) return;
+
+    console.log(`Found ${itemsWithoutIds.length} items without IDs`);
+
+    await ensureAdminSession();
+    
+    if (!isAdmin) {
+        console.log('Not admin - skipping ID fix');
+        return;
+    }
+
+    const doFix = confirm(
+        `Found ${itemsWithoutIds.length} items without IDs.\n\n` +
+        `Would you like to automatically add IDs to them?\n` +
+        `(This will commit to GitHub)`
+    );
+
+    if (!doFix) return;
+
+    try {
+        itemsWithoutIds.forEach(item => ensurePersistentId(item));
+
+        const allItems = DATA.map(({ _index, _uid, ...rest }) => rest);
+
+        await ensureCsrf();
+
+        const res = await fetch(api('/commit'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+                bulkUpdate: allItems,
+                message: `Auto-fix: Add IDs to ${itemsWithoutIds.length} items`,
+                baseSha: DATA_SHA
+            })
+        });
+
+        if (!res.ok) {
+            throw new Error(`Failed to save IDs: ${res.status}`);
+        }
+
+        const result = await res.json();
+        if (result.sha) DATA_SHA = result.sha;
+
+        alert(`Successfully added IDs to ${itemsWithoutIds.length} items!`);
+        
+        await reloadLatestContent();
+    } catch (err) {
+        console.error('Failed to fix missing IDs:', err);
+        alert(`Failed to add IDs: ${err.message}`);
+    }
 }
 
 function indexById(id) {
@@ -937,6 +999,11 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
 
         if (res.status === 409) {
             throw new Error('Save conflict. The data changed in GitHub. Please refresh and try again.');
+        }
+
+        if (res.status === 404) {
+            await reloadLatestContent();
+            throw new Error('Item not found in GitHub. Data has been refreshed - please try again.');
         }
 
         if (!res.ok) {
@@ -1171,7 +1238,16 @@ els.editForm.addEventListener('submit', async (e) => {
     const { out, index } = readForm();
     const originalForKey = index === null ? null : { ...DATA[index] };
 
-    // Validate minimal things
+    if (index !== null && (!DATA[index] || !DATA[index].id)) {
+        els.modalNotice.textContent = 'Item not found locally. Refreshing data...';
+        els.modalNotice.classList.add('error');
+        await reloadLatestContent();
+        setTimeout(() => {
+            els.modalNotice.textContent = 'Data refreshed. Please try again.';
+        }, 1000);
+        return;
+    }
+
     if (out.year !== '' && (!Number.isFinite(out.year) || String(out.year).length !== 4)) {
         els.modalNotice.textContent = 'Year must be 4 digits (or leave blank).';
         els.modalNotice.classList.add('error');
@@ -1186,8 +1262,14 @@ els.editForm.addEventListener('submit', async (e) => {
     SAVE_QUEUE_BUSY = true;
 
     try {
-        const target = index === null ? null : { id: DATA[index].id };
-        const msg = index === null ? 'Add entry' : `Edit entry id ${target.id}`;
+        let target = null;
+        if (index !== null) {
+            target = { id: DATA[index].id };
+            if (!target.id || target.id.trim() === '') {
+                target.fallbackKey = entryKey(DATA[index]);
+            }
+        }
+        const msg = index === null ? 'Add entry' : `Edit entry id ${target?.id || 'unknown'}`;
         
         // OPTIMISTIC UPDATE: Show changes immediately
         if (index === null) {
@@ -1206,10 +1288,8 @@ els.editForm.addEventListener('submit', async (e) => {
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
 
-        // Now commit to server
         await commitJsonWithRefresh(out, target, msg, originalForKey);
     
-        // Show success but don't reload page
         els.modalNotice.textContent = 'Changes saved successfully!';
         els.modalNotice.classList.remove('error');
         els.modalNotice.classList.add('ok');
@@ -1217,9 +1297,9 @@ els.editForm.addEventListener('submit', async (e) => {
         clearDraft(index === null ? null : index);
         els.editForm.reset();
         
-        // Close modal after short delay
-        setTimeout(() => {
+        setTimeout(async () => {
             closeEditor();
+            await reloadLatestContent();
         }, 1500);
     
     } catch (err) {
@@ -1261,12 +1341,23 @@ async function confirmDeleteById(id) {
     }
 
     const itemIndex = DATA.findIndex(item => item && item.id === id);
-    if (itemIndex < 0) { 
-        alert('Item not found in current data. Try refreshing.'); 
-        return; 
+    if (itemIndex < 0) {
+        const doRefresh = confirm('Item not found in current data. Refresh now?');
+        if (doRefresh) {
+            await reloadLatestContent();
+            setTimeout(() => {
+                alert('Data refreshed. Please try deleting again.');
+            }, 500);
+        }
+        return;
     }
     
     const deletedItem = { ...DATA[itemIndex] };
+    
+    if (!deletedItem.id) {
+        alert('Item has no ID. This should not happen. Please refresh the page.');
+        return;
+    }
     const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
     const anime = deletedItem?.anime_en || deletedItem?.anime_romaji || '(unknown)';
     
@@ -1289,6 +1380,8 @@ async function confirmDeleteById(id) {
         applyFilters({ resetPage: false });
 
         await commitJsonWithRefresh(null, { id }, msg, deletedItem);
+        
+        await reloadLatestContent();
 
     } catch (err) {
         DATA.splice(itemIndex, 0, deletedItem);

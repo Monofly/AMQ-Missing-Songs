@@ -590,8 +590,8 @@ export default {
             if (!token) return json({ error: 'Unauthorized' }, 401, cors);
 
             const body = await req.json().catch(() => ({}));
-            const { change, target, message, baseSha } = body || {};
-    
+            const { change, target, message, baseSha, bulkUpdate } = body || {};
+
             if (!message) return json({ error: 'Missing commit message' }, 400, cors);
 
             const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
@@ -611,23 +611,58 @@ export default {
 
             let working = currentData.slice();
 
-            if (target && target.id) {
+            if (bulkUpdate) {
+                working = bulkUpdate;
+            } else if (target && target.id) {
                 if (change === null) {
                     const beforeLength = working.length;
                     working = working.filter(x => x.id !== target.id);
                     const afterLength = working.length;
-            
+
                     if (beforeLength === afterLength) {
                         return json({ error: 'Item not found for deletion.' }, 404, cors);
                     }
                 } else {
-                    const idx = working.findIndex(x => x.id === target.id);
-                    if (idx < 0) return json({ error: 'Item not found for edit.' }, 404, cors);
-                    working[idx] = { ...working[idx], ...change, id: target.id };
+                    let idx = working.findIndex(x => x.id === target.id);
+
+                    if (idx < 0 && target.fallbackKey) {
+                       idx = working.findIndex(x => {
+                            const xKey = [
+                                (x.anime_en || x.anime_romaji || '').toLowerCase(),
+                                String(x.year || ''),
+                                String(x.season || ''),
+                                String(x.type || ''),
+                                (x.song_title_romaji || x.song_title_original || '').toLowerCase(),
+                                String(x.episode || ''),
+                                String(x.time_start || '')
+                            ].join('|');
+                            return xKey === target.fallbackKey;
+                        });
+                    }
+
+                    if (idx < 0) {
+                        const availableIds = working.map(x => x.id).filter(Boolean).slice(0, 10);
+                        return json({ 
+                            error: 'Item not found for edit.', 
+                            targetId: target.id,
+                            sampleIds: availableIds,
+                            totalItems: working.length
+                        }, 404, cors);
+                    }
+
+                    const existingId = working[idx].id || target.id;
+                    working[idx] = { ...working[idx], ...change, id: existingId };
                 }
             } else {
                 if (change === null) return json({ error: 'Cannot delete a new unsaved entry.' }, 400, cors);
-                working.push(change);
+
+                const newItem = { ...change };
+                if (!newItem.id || newItem.id.trim() === '') {
+                    const rand = Math.random().toString(16).slice(2, 10);
+                    newItem.id = `${Date.now()}-${rand}`;
+                }
+
+                working.push(newItem);
             }
 
             for (const item of working) {
