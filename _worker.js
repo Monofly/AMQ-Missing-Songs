@@ -99,6 +99,15 @@ export default {
             return btoa(bin);
         }
 
+        function b64DecodeUnicode(str) {
+            const bin = atob(str);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) {
+                bytes[i] = bin.charCodeAt(i);
+            }
+            return new TextDecoder().decode(bytes);
+        }
+
         function b64url(buf) {
             const bin = String.fromCharCode(...new Uint8Array(buf));
             return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -423,16 +432,19 @@ export default {
                 const text2 = await res2.text();
                 let parsed2 = [];
                 let sha2 = '';
+                let data2 = { content: [], sha: '' }; // Initialize data2
                 try {
                     const meta2 = JSON.parse(text2);
                     sha2 = meta2.sha;
-                    parsed2 = JSON.parse(atob(meta2.content));
-                } catch { parsed2 = []; }
+                    const decodedContent2 = b64DecodeUnicode(meta2.content); // Use new helper
+                    parsed2 = JSON.parse(decodedContent2); // Parse decoded content
+                } catch { parsed2 = [];
+                }
 
                 const newEtag2 = res2.headers.get('ETag');
                 if (newEtag2) etagStore.set(apiUrl, newEtag2);
 
-                const data2 = { content: parsed2, sha: sha2 };
+                data2 = { content: parsed2, sha: sha2 }; // Assign final data2
 
                 // store in memory and CDN cache
                 bodyStore.set(apiUrl, data2);
@@ -445,7 +457,7 @@ export default {
                 });
                 await caches.default.put(cacheKey, toCache2.clone());
 
-                return json(parsed2, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
+                return json(data2, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
             }
 
             // Any non-2xx, non-304 => error
@@ -458,13 +470,16 @@ export default {
             const text = await res.text();
             let parsed = [];
             let sha = '';
+            let data = { content: [], sha: '' }; // Initialize data
             try {
                 const meta = JSON.parse(text);
                 sha = meta.sha;
-                parsed = JSON.parse(atob(meta.content));
-            } catch { parsed = []; }
+                const decodedContent = b64DecodeUnicode(meta.content); // Use new helper
+                parsed = JSON.parse(decodedContent); // Parse decoded content
+            } catch { parsed = [];
+            }
 
-            const data = { content: parsed, sha };
+            data = { content: parsed, sha }; // Assign final data
 
             // Update ETag and memory backup
             const newEtag = res.headers.get('ETag');
@@ -481,7 +496,7 @@ export default {
             });
             await caches.default.put(cacheKey, toCache.clone());
 
-            return json(parsed, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
+            return json(data, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
         }
 
         function isAllowedUrl(s, hosts) {
