@@ -626,6 +626,7 @@ function wireAdminBar() {
     els.loginBtn.addEventListener('click', async () => {
         await loginWithGitHub();
     });
+
     els.logoutBtn.addEventListener('click', async () => {
         await ensureCsrf();
         await fetch(api('/logout'), {
@@ -638,30 +639,34 @@ function wireAdminBar() {
             body: '{}',
             credentials: 'include'
         });
-        // Clear local state fully
         CSRF = '';
         currentUser = null;
         isAdmin = false;
         localStorage.removeItem('wasAdminOrUser');
         updateAdminVisibility();
         applyFilters();
-        // Reload to be 100% sure no stale state lingers
         location.reload();
     });
+
     els.addBtn.addEventListener('click', async () => {
         await restoreSession();
         if (!isAdmin) { alert('You are not authorized to add.'); return; }
         openEditor(null);
     });
+
     els.fixIdsBtn = document.getElementById('fixIdsBtn');
-    els.fixIdsBtn.addEventListener('click', async () => {
-        await restoreSession();
-        if (!isAdmin) {
-            alert('You are not authorized to fix IDs.');
-            return;
-        }
-        await fixAllMissingIds();
-    });
+
+    if (els.fixIdsBtn) {
+        els.fixIdsBtn.addEventListener('click', async () => {
+            await restoreSession();
+            if (!isAdmin) { 
+                alert('You are not authorized to perform this action.'); 
+                return; 
+            }
+            // Run manual fix (will confirm)
+            await fixAllMissingIds();
+        });
+    }
 }
 
 function updateAdminVisibility() {
@@ -940,24 +945,26 @@ function uidFor(it, fallbackIndex) {
 }
 
 function ensurePersistentId(it) {
+    // If already has a non-empty string id, return it.
     if (typeof it.id === 'string' && it.id.trim().length > 0) return it.id;
-    
-    // More robust ID generation using multiple properties as fallback
+
+    // Build a base string using stable identifying fields (falls back to empty strings)
     const baseString = [
         it.anime_en || it.anime_romaji || '',
         it.song_title_romaji || it.song_title_original || '',
         it.episode || '',
         it.time_start || ''
     ].join('|');
-    
-    // Create a simple hash of the base string for consistency
+
+    // Simple 32-bit-ish hash to get a deterministic-ish component when fields are the same
     let hash = 0;
     for (let i = 0; i < baseString.length; i++) {
         const char = baseString.charCodeAt(i);
         hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32bit integer
+        hash = hash & hash; // keep to 32-bit signed int
     }
-    
+
+    // Mix timestamp + hash + short random suffix
     const rand = Math.random().toString(16).slice(2, 6);
     const id = `${Date.now()}-${Math.abs(hash).toString(16)}-${rand}`;
     it.id = id;
@@ -969,32 +976,28 @@ async function fixAllMissingIds() {
         alert('You must be logged in as admin to fix IDs.');
         return;
     }
-    
+
     const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
     if (itemsWithoutIds.length === 0) {
         alert('All items already have IDs!');
         return;
     }
-    
+
     if (!confirm(`This will add IDs to ${itemsWithoutIds.length} items that are missing them. Continue?`)) {
         return;
     }
-    
+
     try {
-        // Create updated data with IDs for all items
-        const allItems = DATA.map(item => {
-            const itemCopy = { ...item };
-            if (!itemCopy.id || itemCopy.id.trim() === '') {
-                const rand = Math.random().toString(16).slice(2, 10);
-                itemCopy.id = `${Date.now()}-${rand}`;
-            }
-            // Remove internal properties before saving
-            const { _index, _uid, ...cleanItem } = itemCopy;
-            return cleanItem;
+        // Ensure each item has an ID (mutates DATA)
+        DATA.forEach(it => {
+            if (!it.id || it.id.trim() === '') ensurePersistentId(it);
         });
-        
+
+        // Build a clean copy of the array (remove client-only props like _index/_uid)
+        const allItems = DATA.map(({ _index, _uid, ...rest }) => rest);
+
         await ensureCsrf();
-        
+
         const res = await fetch(api('/commit'), {
             method: 'POST',
             headers: {
@@ -1009,49 +1012,47 @@ async function fixAllMissingIds() {
                 baseSha: DATA_SHA
             })
         });
-        
+
         if (!res.ok) {
-            throw new Error(`Failed to save: ${res.status}`);
+            const txt = await res.text().catch(() => '');
+            throw new Error(`Failed to save: ${res.status} ${txt}`);
         }
-        
-        const result = await res.json();
+
+        const result = await res.json().catch(() => ({}));
         if (result.sha) DATA_SHA = result.sha;
-        
+
         alert(`✅ Successfully added IDs to ${itemsWithoutIds.length} items! The page will now reload.`);
         location.reload();
-        
     } catch (err) {
-        alert(`Failed to fix IDs: ${err.message}`);
+        alert(`Failed to fix IDs: ${err.message || err}`);
     }
 }
 
 async function fixMissingIdsIfAdmin() {
     const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
-    
     if (itemsWithoutIds.length === 0) return;
 
     console.log(`Found ${itemsWithoutIds.length} items without IDs`);
 
+    // Ensure session is resolved and we know whether we are admin
     await ensureAdminSession();
-    
     if (!isAdmin) {
         console.log('Not admin - skipping ID fix');
         return;
     }
 
-    // Auto-fix without asking for confirmation
+    // Assign IDs in-memory where missing
     let needsCommit = false;
-    itemsWithoutIds.forEach(item => {
+    DATA.forEach(item => {
         const oldId = item.id;
         ensurePersistentId(item);
-        if (item.id !== oldId) {
-            needsCommit = true;
-        }
+        if (!oldId || oldId.trim() === '') needsCommit = true;
     });
 
     if (!needsCommit) return;
 
     try {
+        // Build clean payload (strip internal props)
         const allItems = DATA.map(({ _index, _uid, ...rest }) => rest);
 
         await ensureCsrf();
@@ -1072,17 +1073,16 @@ async function fixMissingIdsIfAdmin() {
         });
 
         if (!res.ok) {
-            const errorText = await res.text().catch(() => '');
-            console.error('Failed to save IDs automatically:', res.status, errorText);
+            const errText = await res.text().catch(() => '');
+            console.error('Failed to save IDs automatically:', res.status, errText);
             return;
         }
 
-        const result = await res.json();
+        const result = await res.json().catch(() => ({}));
         if (result.sha) DATA_SHA = result.sha;
 
         console.log(`✅ Successfully added IDs to ${itemsWithoutIds.length} items`);
-        
-        // Reload to get the updated data with IDs
+        // Reload to get the authoritative version from GitHub
         await reloadLatestContent();
     } catch (err) {
         console.error('Failed to fix missing IDs automatically:', err);
