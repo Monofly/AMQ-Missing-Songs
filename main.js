@@ -417,6 +417,8 @@ function populateYearOptions(items) {
 async function init() {
     try {
         watchToolbarHeight();
+        await ensureAdminSession();
+        updateAdminVisibility();
 
         // Always load current content (no forced “fresh” here)
         const res = await fetch(api('/content'), {
@@ -714,6 +716,37 @@ async function ensureFreshData() {
     }
 }
 
+// Lightweight guard to restore admin session and update UI labels
+async function ensureAdminSession() {
+    await restoreSession(); // updates currentUser + isAdmin + toolbar text
+    return isAdmin;
+}
+
+// Central guard used before launching, opening editor, and saving
+// - It refreshes admin session
+// - It checks the latest JSON (with a short retry to outrun CDN lag)
+// - Returns { ok: true } if all good; otherwise { ok: false, reason: '...' }
+async function requireFreshAndAdmin({ retries = 2, delayMs = 700 } = {}) {
+    const admin = await ensureAdminSession();
+    if (!admin) {
+        return { ok: false, reason: 'not_admin' };
+    }
+    // Retry freshness in case CDN serves stale for a moment
+    for (let i = 0; i <= retries; i++) {
+        try {
+            await ensureFreshData();
+            return { ok: true };
+        } catch (err) {
+            if (i < retries) {
+                await new Promise(r => setTimeout(r, delayMs));
+                continue;
+            }
+            return { ok: false, reason: 'stale_json', message: String(err.message || err) };
+        }
+    }
+    return { ok: false, reason: 'unknown' };
+}
+
 async function loginWithGitHub() {
     // 1) Start device flow via Worker
     const start = await fetch(api('/oauth/device-code'), {
@@ -943,6 +976,12 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
             // 2) Finish the Save UI instantly
             els.saveNotice.classList.remove('saving');
             els.saveNotice.textContent = 'Saved.';
+
+            // 3) Immediately sync from server
+            if (commitData2.sha) {
+                await waitForServerShaAndSync(commitData2.sha, 3, 800);
+            }
+
             setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
             return;
         }
@@ -962,11 +1001,50 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
         // 2) Finish the Save UI instantly
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
+
+        // 3) Immediately sync from server so further edits won't trip freshness mismatch
+        if (commitData.sha) {
+            await waitForServerShaAndSync(commitData.sha, 3, 800);
+        }
+
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
 
     } finally {
         els.saveBtn.disabled = false;
     }
+}
+
+// Attempt to refetch /content until the SHA matches the new server SHA.
+// This helps outrun cache lag so the next edit won't fail freshness checks.
+async function waitForServerShaAndSync(targetSha, maxTries = 3, delayMs = 800) {
+    for (let i = 0; i < maxTries; i++) {
+        const res = await fetch(freshApi('/content'), {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'include',
+            cache: 'no-store'
+        });
+        if (!res.ok) {
+            await new Promise(r => setTimeout(r, delayMs));
+            continue;
+        }
+        const j = await res.json();
+        const updatedSha = j.sha || '';
+        const array = Array.isArray(j.content) ? j.content : [];
+
+        if (updatedSha && updatedSha === targetSha) {
+            // Sync local DATA with the server content
+            DATA = array.map((x, i) => ({ ...x, _index: i }));
+            DATA_SHA = updatedSha;
+            const savedFilters = loadFilterState();
+            populateYearOptions(DATA);
+            setFilterState(savedFilters);
+            applyFilters({ resetPage: false });
+            return true;
+        }
+        await new Promise(r => setTimeout(r, delayMs));
+    }
+    return false;
 }
 
 async function commitDeleteNoFresh(index, commitMessage) {
@@ -1015,6 +1093,12 @@ async function commitDeleteNoFresh(index, commitMessage) {
         // Finish the delete UI
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Deleted.';
+
+        // Sync from server to keep UI aligned with latest content
+        if (commitData.sha) {
+            await waitForServerShaAndSync(commitData.sha, 3, 800);
+        }
+
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
     } finally {
         els.saveBtn?.disabled && (els.saveBtn.disabled = false);
@@ -1050,17 +1134,14 @@ function buildPresetFromShow(it) {
 }
 
 async function openEditor(index, preset) {
-    // Ensure session state is up-to-date before showing the editor
-    await restoreSession();
-    if (!isAdmin) {
-        alert('You are not currently signed in with write access. Please sign in again.');
-        return;
-    }
-    // Recheck data is fresh before editing
-    try {
-        await ensureFreshData();
-    } catch (err) {
-        alert(err.message);
+    // Use the centralized guard: admin + latest JSON with small retry
+    const guard = await requireFreshAndAdmin();
+    if (!guard.ok) {
+        if (guard.reason === 'not_admin') {
+            alert('You are not currently signed in with write access. Please sign in again.');
+        } else {
+            alert(guard.message || 'Could not refresh latest data. Please try again.');
+        }
         return;
     }
     els.modalNotice.textContent = '';
@@ -1214,16 +1295,13 @@ els.cancelBtn.addEventListener('click', () => {
 
 els.editForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    await restoreSession();
-    if (!isAdmin) {
-        alert('You are not currently signed in with write access. Please sign in again.');
-        return;
-    }
-
-    try {
-        await ensureFreshData();
-    } catch (err) {
-        alert(err.message);
+    const guard = await requireFreshAndAdmin();
+    if (!guard.ok) {
+        if (guard.reason === 'not_admin') {
+            alert('You are not currently signed in with write access. Please sign in again.');
+        } else {
+            alert(guard.message || 'Could not refresh latest data. Please try again.');
+        }
         return;
     }
 
@@ -1280,18 +1358,13 @@ els.editForm.addEventListener('submit', async (e) => {
 });
 
 async function confirmDelete(index) {
-    // Always refresh admin session first
-    await restoreSession();
-    if (!isAdmin) {
-        alert('You are not currently signed in with write access. Please sign in again.');
-        return;
-    }
-
-    // Recheck latest data before deletion
-    try {
-        await ensureFreshData();
-    } catch (err) {
-        alert(err.message);
+    const guard = await requireFreshAndAdmin();
+    if (!guard.ok) {
+        if (guard.reason === 'not_admin') {
+            alert('You are not currently signed in with write access. Please sign in again.');
+        } else {
+            alert(guard.message || 'Could not refresh latest data. Please try again.');
+        }
         return;
     }
 
