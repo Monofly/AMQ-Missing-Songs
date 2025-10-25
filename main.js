@@ -977,11 +977,6 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
             els.saveNotice.classList.remove('saving');
             els.saveNotice.textContent = 'Saved.';
 
-            // 3) Immediately sync from server
-            if (commitData2.sha) {
-                await waitForServerShaAndSync(commitData2.sha, 3, 800);
-            }
-
             setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
             return;
         }
@@ -1002,49 +997,11 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
 
-        // 3) Immediately sync from server so further edits won't trip freshness mismatch
-        if (commitData.sha) {
-            await waitForServerShaAndSync(commitData.sha, 3, 800);
-        }
-
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
 
     } finally {
         els.saveBtn.disabled = false;
     }
-}
-
-// Attempt to refetch /content until the SHA matches the new server SHA.
-// This helps outrun cache lag so the next edit won't fail freshness checks.
-async function waitForServerShaAndSync(targetSha, maxTries = 3, delayMs = 800) {
-    for (let i = 0; i < maxTries; i++) {
-        const res = await fetch(freshApi('/content'), {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            credentials: 'include',
-            cache: 'no-store'
-        });
-        if (!res.ok) {
-            await new Promise(r => setTimeout(r, delayMs));
-            continue;
-        }
-        const j = await res.json();
-        const updatedSha = j.sha || '';
-        const array = Array.isArray(j.content) ? j.content : [];
-
-        if (updatedSha && updatedSha === targetSha) {
-            // Sync local DATA with the server content
-            DATA = array.map((x, i) => ({ ...x, _index: i }));
-            DATA_SHA = updatedSha;
-            const savedFilters = loadFilterState();
-            populateYearOptions(DATA);
-            setFilterState(savedFilters);
-            applyFilters({ resetPage: false });
-            return true;
-        }
-        await new Promise(r => setTimeout(r, delayMs));
-    }
-    return false;
 }
 
 async function commitDeleteNoFresh(index, commitMessage) {
@@ -1093,11 +1050,6 @@ async function commitDeleteNoFresh(index, commitMessage) {
         // Finish the delete UI
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Deleted.';
-
-        // Sync from server to keep UI aligned with latest content
-        if (commitData.sha) {
-            await waitForServerShaAndSync(commitData.sha, 3, 800);
-        }
 
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
     } finally {
