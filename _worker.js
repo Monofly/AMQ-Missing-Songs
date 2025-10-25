@@ -103,11 +103,14 @@ export default {
         }
 
         function b64DecodeUnicode(str) {
+            // First, decode base64 to binary string
             const bin = atob(str);
+            // Convert binary string to Uint8Array
             const bytes = new Uint8Array(bin.length);
             for (let i = 0; i < bin.length; i++) {
                 bytes[i] = bin.charCodeAt(i);
             }
+            // Decode as UTF-8
             return new TextDecoder().decode(bytes);
         }
 

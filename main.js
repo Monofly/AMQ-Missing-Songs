@@ -322,13 +322,16 @@ function renderRows(items, totalFilteredCount = items.length) {
             });
         });
         els.rows.querySelectorAll('[data-delete-id]').forEach(btn => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', async () => {
                 const id = btn.getAttribute('data-delete-id');
                 if (!id) { 
                     alert('Item ID not found. Try refreshing.'); 
                     return; 
                 }
-                confirmDeleteById(id);
+                // Add a small delay to ensure the click is processed
+                setTimeout(() => {
+                    confirmDeleteById(id);
+                }, 10);
             });
         });
         els.rows.querySelectorAll('[data-add-from-id]').forEach(btn => {
@@ -443,23 +446,28 @@ async function init() {
         const data = await res.json();
         const raw = data.content;
         DATA_SHA = data.sha;
-        DATA = (raw || []).map((x, i) => ({
-            anime_en: '', anime_romaji: '',
-            year: '', season: 'Winter',
-            type: 'OP',
-            song_title_romaji: '', song_title_original: '',
-            artist_romaji: '', artist_original: '',
-            composer_romaji: '', composer_original: '',
-            arranger_romaji: '', arranger_original: '',
-            episode: '', time_start: '', time_end: '',
-            unidentified: false,
-            clean_available: true,
-            ann_url: '', mal_url: '',
-            issues: [],
-            notes: '',
-            ...x,
-            _index: i
-        }));
+        DATA = (raw || []).map((x, i) => {
+            const item = {
+                anime_en: '', anime_romaji: '',
+                year: '', season: 'Winter',
+                type: 'OP',
+                song_title_romaji: '', song_title_original: '',
+                artist_romaji: '', artist_original: '',
+                composer_romaji: '', composer_original: '',
+                arranger_romaji: '', arranger_original: '',
+                episode: '', time_start: '', time_end: '',
+                unidentified: false,
+                clean_available: true,
+                ann_url: '', mal_url: '',
+                issues: [],
+                notes: '',
+                ...x,
+                _index: i
+            };
+            // Ensure the item has a persistent ID
+            ensurePersistentId(item);
+            return item;
+        });
 
         DATA = DATA.map(it => { ensurePersistentId(it); return it; });
 
@@ -1270,7 +1278,7 @@ async function confirmDeleteById(id) {
     }
 
     // FIX: Use the actual DATA array to find the item
-    const itemIndex = DATA.findIndex(item => item.id === id);
+    const itemIndex = DATA.findIndex(item => item && item.id === id);
     if (itemIndex < 0) { 
         alert('Item not found in current data. Try refreshing.'); 
         return; 
