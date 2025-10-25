@@ -61,6 +61,8 @@ const PAGE_SIZE = 50;
 let currentPage = 1;
 let lastFiltered = [];
 
+let currentUser = null;
+let isAdmin = false;
 let SAVE_QUEUE_BUSY = false;
 
 // Persisted filter state
@@ -322,7 +324,10 @@ function renderRows(items, totalFilteredCount = items.length) {
         els.rows.querySelectorAll('[data-delete-id]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.getAttribute('data-delete-id');
-                if (!id) { alert('Item not found. Try refreshing.'); return; }
+                if (!id) { 
+                    alert('Item ID not found. Try refreshing.'); 
+                    return; 
+                }
                 confirmDeleteById(id);
             });
         });
@@ -738,7 +743,6 @@ async function isFreshAgainstRemoteSha() {
 }
 
 async function restoreSession() {
-    // Ask worker who we are (uses cookie)
     try {
         const res = await fetch(api('/auth/me'), {
             headers: { 'Accept': 'application/json' },
@@ -756,19 +760,15 @@ async function restoreSession() {
             isAdmin = false;
             localStorage.removeItem('wasAdminOrUser');
         }
-    } catch {
-        // Keep existing state on network errors to avoid false logouts
-        // Optional: show a subtle notice in the toolbar if needed
-        const was = localStorage.getItem('wasAdminOrUser');
-        if (was) {
-            // Still consider user signed in locally until next successful check
-            // Do not flip currentUser/isAdmin here
-        } else {
-            currentUser = null;
-            isAdmin = false;
-        }
+        updateAdminVisibility(); // Make sure this is called
+    } catch (err) {
+        console.error('Session restore failed:', err);
+        // On error, assume not admin to be safe
+        currentUser = null;
+        isAdmin = false;
+        localStorage.removeItem('wasAdminOrUser');
+        updateAdminVisibility();
     }
-    updateAdminVisibility();
 }
 
 // Lightweight guard to restore admin session and update UI labels
@@ -1269,11 +1269,17 @@ async function confirmDeleteById(id) {
         return;
     }
 
-    const idx = indexById(id);
-    if (idx < 0) { alert('Item not found. Try refreshing.'); return; }
-    const it = DATA[idx];
+    // FIX: Use the actual DATA array to find the item
+    const itemIndex = DATA.findIndex(item => item.id === id);
+    if (itemIndex < 0) { 
+        alert('Item not found in current data. Try refreshing.'); 
+        return; 
+    }
+    
+    const it = DATA[itemIndex];
     const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
     const anime = it?.anime_en || it?.anime_romaji || '(unknown)';
+    
     if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
 
     if (SAVE_QUEUE_BUSY) {
@@ -1288,7 +1294,6 @@ async function confirmDeleteById(id) {
         const msg = `Delete entry id ${id}`;
 
         // OPTIMISTIC UPDATE: Remove immediately from UI
-        const itemIndex = DATA.findIndex(item => item.id === id);
         const deletedItem = DATA[itemIndex]; // Save for potential revert
     
         DATA = DATA.filter(item => item.id !== id);
