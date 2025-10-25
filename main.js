@@ -528,7 +528,11 @@ function wireAdminBar() {
         // Reload to be 100% sure no stale state lingers
         location.reload();
     });
-    els.addBtn.addEventListener('click', () => openEditor(null));
+    els.addBtn.addEventListener('click', async () => {
+        await restoreSession();
+        if (!isAdmin) { alert('You are not authorized to add.'); return; }
+        openEditor(null);
+    });
 }
 
 function updateAdminVisibility() {
@@ -709,21 +713,38 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 
         let targetKey;
         if (index === null) {
-            targetKey = entryKey(changeObj);
+            targetKey = changeObj ? entryKey(changeObj) : null; // null when deleting new → not allowed
         } else {
             const currentIt = DATA[index];
             targetKey = entryKey(currentIt);
         }
 
         let newArray = freshArray.slice();
+
+        // Handle add/edit/delete distinctly
         if (index === null) {
+            if (changeObj === null) {
+                throw new Error('Cannot delete a new unsaved entry.');
+            }
+            // Add
             newArray.push(changeObj);
         } else {
             const matchIdx = freshKeys.has(targetKey) ? freshKeys.get(targetKey) : null;
-            if (matchIdx === null || matchIdx === undefined) {
-                newArray.push(changeObj);
+            if (changeObj === null) {
+                // Delete
+                if (matchIdx === null || matchIdx === undefined) {
+                    // If not found in fresh, nothing to delete
+                } else {
+                    newArray.splice(matchIdx, 1);
+                }
             } else {
-                newArray[matchIdx] = { ...newArray[matchIdx], ...changeObj };
+                // Edit
+                if (matchIdx === null || matchIdx === undefined) {
+                    // If not found, treat as add to avoid losing data
+                    newArray.push(changeObj);
+                } else {
+                    newArray[matchIdx] = { ...newArray[matchIdx], ...changeObj };
+                }
             }
         }
 
@@ -755,12 +776,26 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             let newArray2 = freshArray2.slice();
 
             const matchIdx2 = index === null ? null : (fresh2Keys.has(targetKey) ? fresh2Keys.get(targetKey) : null);
+
             if (index === null) {
-                newArray2.push(changeObj);
-            } else if (matchIdx2 === null || matchIdx2 === undefined) {
+                if (changeObj === null) {
+                    throw new Error('Cannot delete a new unsaved entry.');
+                }
                 newArray2.push(changeObj);
             } else {
-                newArray2[matchIdx2] = { ...newArray2[matchIdx2], ...changeObj };
+                if (changeObj === null) {
+                    if (matchIdx2 === null || matchIdx2 === undefined) {
+                        // nothing to delete
+                    } else {
+                        newArray2.splice(matchIdx2, 1);
+                    }
+                } else {
+                    if (matchIdx2 === null || matchIdx2 === undefined) {
+                        newArray2.push(changeObj);
+                    } else {
+                        newArray2[matchIdx2] = { ...newArray2[matchIdx2], ...changeObj };
+                    }
+                }
             }
 
             const payloadArray2 = newArray2.map(({ _index, ...rest }) => rest);
@@ -813,18 +848,15 @@ async function getCurrentSha() {
 
 // After a successful commit, refresh DATA locally without losing filters or page
 async function afterCommitUpdateLocal(payloadArray) {
-    // Update local DATA and UI from our payload (sorted and re-indexed)
-    const payload = JSON.stringify(payloadArray, null, 2) + '\n';
-    DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
+    // Rebuild DATA once, then sort, then re-index once
+    DATA = payloadArray.slice();
     DATA.sort(compareItems);
     DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 
-    // Refresh year options but keep selected year
     const saved = loadFilterState();
     populateYearOptions(DATA);
     setFilterState(saved);
 
-    // Reapply filters without resetting page
     applyFilters({ resetPage: false });
 }
 
@@ -882,6 +914,13 @@ function openEditor(index, preset) {
     // Auto-save draft on any input change
     const f = els.editForm;
     const onChange = () => saveDraft(indexOrNew);
+    const clearError = () => {
+        els.modalNotice.textContent = '';
+        els.modalNotice.classList.remove('error');
+    };
+    Array.from(f.elements).forEach(el => {
+        if (el.name) el.addEventListener('input', clearError, { passive: true });
+    });
     Array.from(f.elements).forEach(el => {
         if (el.name) el.addEventListener('input', onChange, { passive: true });
         if (el.name) el.addEventListener('change', onChange, { passive: true });
@@ -999,17 +1038,17 @@ els.cancelBtn.addEventListener('click', () => {
     closeEditor();
 });
 
-els.modalBackdrop.addEventListener('click', (e) => {
-    if (e.target === els.modalBackdrop) closeEditor();
-});
-
 els.editForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // Always re-verify session just before saving
+    await restoreSession();
     if (!isAdmin) {
         els.modalNotice.textContent = 'You are not authorized to save.';
         els.modalNotice.classList.add('error');
         return;
     }
+
     els.modalNotice.textContent = '';
     els.modalNotice.classList.remove('error');
 
@@ -1032,15 +1071,14 @@ els.editForm.addEventListener('submit', async (e) => {
     try {
         const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
         await commitJsonWithRefresh(out, index, msg);
-        // Success → clear draft and close
-        const indexOrNew = index === null ? null : index;
-        clearDraft(indexOrNew);
+        clearDraft(index === null ? null : index);
         els.editForm.reset();
         closeEditor();
     } catch (err) {
-        // Show error inside the form; do NOT close
         els.modalNotice.textContent = String(err.message || err);
         els.modalNotice.classList.add('error');
+    } finally {
+        SAVE_QUEUE_BUSY = false; // ensure reset always
     }
 });
 
