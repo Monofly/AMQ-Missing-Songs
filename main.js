@@ -781,24 +781,23 @@ async function ensureAdminSession() {
 // - It refreshes admin session
 // - It checks the latest JSON (with a short retry to outrun CDN lag)
 // - Returns { ok: true } if all good; otherwise { ok: false, reason: '...' }
-async function requireFreshAndAdmin({ retries = 2, delayMs = 700 } = {}) {
+async function requireFreshAndAdmin({ retries = 1, delayMs = 500 } = {}) {
     const admin = await ensureAdminSession();
     if (!admin) {
         return { ok: false, reason: 'not_admin' };
     }
-    for (let i = 0; i <= retries; i++) {
-        const fresh = await isFreshAgainstRemoteSha();
-        if (fresh.ok) return { ok: true };
-        if (i < retries) {
-            await new Promise(r => setTimeout(r, delayMs));
-            continue;
-        }
-        if (fresh.reason === 'stale') {
-            return { ok: false, reason: 'stale_json', message: 'Your local list is outdated. Please refresh and try again.' };
-        }
-        return { ok: false, reason: fresh.reason || 'unknown' };
+    
+    // Only check JSON freshness, don't auto-retry
+    const fresh = await isFreshAgainstRemoteSha();
+    if (!fresh.ok && fresh.reason === 'stale') {
+        return { 
+            ok: false, 
+            reason: 'stale_json', 
+            message: 'Your local list is outdated. Please refresh and try again.' 
+        };
     }
-    return { ok: false, reason: 'unknown' };
+    
+    return { ok: true };
 }
 
 async function loginWithGitHub() {
@@ -899,7 +898,6 @@ function indexById(id) {
 
 // Merge new change into the freshest data from server
 async function commitJsonWithRefresh(changeObj, target, commitMessage, originalItemForKey) {
-    // target can be { id } for edit/delete or null for add
     els.saveBtn && (els.saveBtn.disabled = true);
     show(els.saveNotice);
     els.saveNotice.textContent = changeObj === null ? 'Deleting…' : 'Saving…';
@@ -908,20 +906,24 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
     try {
         await ensureCsrf();
 
-        let working = DATA.slice();
+        let working = DATA.slice(); // Start with current DATA
 
         if (target && target.id) {
-            const idx = working.findIndex(x => x.id === target.id);
-            if (idx < 0) throw new Error('Item not found for commit.');
             if (changeObj === null) {
-                // Delete by id
+                // DELETE: Remove item by ID
+                const itemExists = working.some(x => x.id === target.id);
+                if (!itemExists) {
+                    throw new Error('Item not found for deletion.');
+                }
                 working = working.filter(x => x.id !== target.id);
             } else {
-                // Edit by id
+                // EDIT: Update existing item
+                const idx = working.findIndex(x => x.id === target.id);
+                if (idx < 0) throw new Error('Item not found for edit.');
                 working[idx] = { ...working[idx], ...changeObj, id: target.id };
             }
         } else {
-            // Add
+            // ADD: Create new item
             if (changeObj === null) throw new Error('Cannot delete a new unsaved entry.');
             const newItem = { ...changeObj };
             ensurePersistentId(newItem);
@@ -1195,40 +1197,62 @@ els.editForm.addEventListener('submit', async (e) => {
     }
     SAVE_QUEUE_BUSY = true;
 
-    // Update DATA locally so the UI reflects changes immediately
-    if (index === null) {
-        // Optimistic add
-        const newItem = { ...out, _index: DATA.length };
-        ensurePersistentId(newItem);
-        DATA.push(newItem);
-    } else {
-        // Optimistic edit
-        const existingId = DATA[index].id;
-        DATA[index] = { ...DATA[index], ...out, id: existingId };
-    }
-
-    // Defer heavy sorting/indexing slightly to keep UI responsive on Save.
-    // The current page updates instantly; resort happens a moment later.
-    applyFilters({ resetPage: false });
-    setTimeout(() => {
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-        applyFilters({ resetPage: false });
-    }, 50);
-
     try {
         const target = index === null ? null : { id: DATA[index].id };
         const msg = index === null ? 'Add entry' : `Edit entry id ${target.id}`;
+        
+        // OPTIMISTIC UPDATE: Show changes immediately
+        if (index === null) {
+            // Add - create new item and add to DATA
+            const newItem = { ...out };
+            ensurePersistentId(newItem);
+            DATA.push(newItem);
+        } else {
+            // Edit - update existing item
+            const existingId = DATA[index].id;
+            DATA[index] = { ...DATA[index], ...out, id: existingId };
+        }
+        
+        // Re-sort and update UI immediately
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        applyFilters({ resetPage: false });
+
+        // Now commit to server
         await commitJsonWithRefresh(out, target, msg, originalForKey);
-        await reloadLatestContent();
+    
+        // Show success but don't reload page
+        els.modalNotice.textContent = 'Changes saved successfully!';
+        els.modalNotice.classList.remove('error');
+        els.modalNotice.classList.add('ok');
+    
         clearDraft(index === null ? null : index);
         els.editForm.reset();
-        closeEditor();
+        
+        // Close modal after short delay
+        setTimeout(() => {
+            closeEditor();
+        }, 1500);
+    
     } catch (err) {
+        // REVERT optimistic update on error
+        if (index === null) {
+            // Remove the added item
+            DATA.pop();
+        } else {
+            // Restore original item
+            DATA[index] = { ...originalForKey };
+        }
+        
+        // Re-sort and update UI
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        applyFilters({ resetPage: false });
+        
         els.modalNotice.textContent = String(err.message || err);
         els.modalNotice.classList.add('error');
     } finally {
-        SAVE_QUEUE_BUSY = false; // ensure reset always
+        SAVE_QUEUE_BUSY = false;
     }
 });
 
@@ -1267,23 +1291,26 @@ async function confirmDeleteById(id) {
     try {
         const msg = `Delete entry id ${id}`;
 
-        // Optimistic UI: remove by id (not index), no resort until after server confirms.
-        const beforeLen = DATA.length;
+        // OPTIMISTIC UPDATE: Remove immediately from UI
+        const itemIndex = DATA.findIndex(item => item.id === id);
+        const deletedItem = DATA[itemIndex]; // Save for potential revert
+    
         DATA = DATA.filter(item => item.id !== id);
-        if (DATA.length === beforeLen) {
-            throw new Error('Delete failed locally. Item id not found.');
-        }
-
         applyFilters({ resetPage: false });
 
-        // Commit using id-safe payload
-        await commitJsonWithRefresh(null, { id }, msg, { ...it });
+        // Commit to server
+        await commitJsonWithRefresh(null, { id }, msg, deletedItem);
 
-        // After successful commit, force a fresh reload of JSON to avoid drift
-        await reloadLatestContent();
+        // Success - changes already visible
+        // No need to reload page
 
-        clearDraft(idx);
     } catch (err) {
+        // REVERT optimistic update on error
+        DATA.push(deletedItem);
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        applyFilters({ resetPage: false });
+    
         alert(`Delete failed: ${err.message || err}`);
     } finally {
         document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = false);

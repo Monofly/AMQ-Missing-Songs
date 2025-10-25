@@ -240,6 +240,10 @@ footer {
     font-size: 12px;
 }
 
+.notice.ok {
+    color: var(--ok);
+}
+
 .notice.tip {
     display: block;
     margin: 0 0 10px;
