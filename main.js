@@ -52,6 +52,7 @@ function setToolbarHeight() {
 const api = (p) => p;
 
 let DATA = [];
+let DATA_SHA = '';
 let isAdmin = false;
 let currentUser = null;
 let CSRF = '';
@@ -422,8 +423,9 @@ async function init() {
             cache: 'no-store'
         });
         if (!res.ok) throw new Error(`Load error ${res.status}`);
-        const raw = await res.json();
-
+        const data = await res.json();
+        const raw = data.content;
+        DATA_SHA = data.sha;
         DATA = (raw || []).map((x, i) => ({
             anime_en: '', anime_romaji: '',
             year: '', season: 'Winter',
@@ -706,8 +708,9 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             cache: 'no-store'
         });
         if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
-        const freshArray = await freshRes.json();
-
+        const freshData = await freshRes.json();
+        const freshArray = freshData.content;
+        const freshSha = freshData.sha;
         const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
         const freshKeys = new Map(freshWithIndex.map(x => [entryKey(x), x._index]));
 
@@ -757,7 +760,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
                 'X-CSRF-Token': CSRF
             },
             credentials: 'include',
-            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: await getCurrentSha() })
+            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: freshSha })
         });
 
         if (res.status === 409) {
@@ -769,8 +772,9 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
                 cache: 'no-store'
             });
             if (!freshRes2.ok) throw new Error(`Refresh failed ${freshRes2.status}`);
-            const freshArray2 = await freshRes2.json();
-
+            const freshData2 = await freshRes2.json();
+            const freshArray2 = freshData2.content;
+            const freshSha2 = freshData2.sha;
             const fresh2WithIndex = freshArray2.map((x, i) => ({ ...x, _index: i }));
             const fresh2Keys = new Map(fresh2WithIndex.map(x => [entryKey(x), x._index]));
             let newArray2 = freshArray2.slice();
@@ -807,15 +811,16 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
                     'X-CSRF-Token': CSRF
                 },
                 credentials: 'include',
-                body: JSON.stringify({ content: payloadArray2, message: commitMessage, baseSha: j.currentSha || await getCurrentSha() })
+                body: JSON.stringify({ content: payloadArray2, message: commitMessage, baseSha: freshSha2 })
             });
 
             if (!res2.ok) {
                 const txt2 = await res2.text().catch(() => '');
                 throw new Error(`Save failed (retry): ${res2.status} ${txt2}`);
             }
-
-            await afterCommitUpdateLocal(payloadArray2);
+            
+            const commitData2 = await res2.json();
+            await afterCommitUpdateLocal(payloadArray2, commitData2.sha);
             els.saveNotice.textContent = 'Saved.';
             setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
             return;
@@ -826,7 +831,8 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             throw new Error(`Save failed: ${res.status} ${txt}`);
         }
 
-        await afterCommitUpdateLocal(payloadArray);
+        const commitData = await res.json();
+        await afterCommitUpdateLocal(payloadArray, commitData.sha);
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
 
@@ -835,21 +841,11 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
     }
 }
 
-// Get current SHA by asking the repo metadata via a lightweight HEAD-like call
-// We reuse the worker to expose SHA by doing a meta fetch inside commit flow.
-// For simplicity here, we call the GitHub contents API via the worker by piggybacking:
-// the worker already reads meta in commit; we don't have a separate endpoint,
-// so we fetch /content and rely on 2nd commit to provide currentSha after conflict.
-// Fallback: return empty string if unavailable.
-async function getCurrentSha() {
-    // No dedicated endpoint; return empty string and let server accept if no baseSha provided
-    return '';
-}
-
 // After a successful commit, refresh DATA locally without losing filters or page
-async function afterCommitUpdateLocal(payloadArray) {
+async function afterCommitUpdateLocal(payloadArray, newSha) {
     // Rebuild DATA once, then sort, then re-index once
     DATA = payloadArray.slice();
+    DATA_SHA = newSha || DATA_SHA; // Update to the new SHA
     DATA.sort(compareItems);
     DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 

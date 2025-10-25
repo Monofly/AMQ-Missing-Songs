@@ -383,7 +383,7 @@ export default {
             const prevEtag = etagStore.get(apiUrl);
             // build headers for GitHub read
             const headers = new Headers({
-                'Accept': 'application/vnd.github.v3.raw',
+                'Accept': 'application/vnd.github+json',
                 'User-Agent': 'monofly-anime-songs-worker'
             });
             if (prevEtag) headers.set('If-None-Match', prevEtag);
@@ -410,7 +410,7 @@ export default {
                 // 2c) Last-resort: refetch without If-None-Match to get the body
                 const res2 = await fetch(apiUrl, {
                     headers: new Headers({
-                        'Accept': 'application/vnd.github.v3.raw',
+                        'Accept': 'application/vnd.github+json',
                         'User-Agent': 'monofly-anime-songs-worker'
                     }),
                     cache: 'no-store'
@@ -422,14 +422,21 @@ export default {
 
                 const text2 = await res2.text();
                 let parsed2 = [];
-                try { parsed2 = JSON.parse(text2); } catch { parsed2 = []; }
+                let sha2 = '';
+                try {
+                    const meta2 = JSON.parse(text2);
+                    sha2 = meta2.sha;
+                    parsed2 = JSON.parse(atob(meta2.content));
+                } catch { parsed2 = []; }
 
                 const newEtag2 = res2.headers.get('ETag');
                 if (newEtag2) etagStore.set(apiUrl, newEtag2);
 
+                const data2 = { content: parsed2, sha: sha2 };
+
                 // store in memory and CDN cache
-                bodyStore.set(apiUrl, parsed2);
-                const toCache2 = new Response(JSON.stringify(parsed2), {
+                bodyStore.set(apiUrl, data2);
+                const toCache2 = new Response(JSON.stringify(data2), {
                     status: 200,
                     headers: {
                         'Content-Type': 'application/json',
@@ -450,15 +457,22 @@ export default {
             // 200 OK with fresh content
             const text = await res.text();
             let parsed = [];
-            try { parsed = JSON.parse(text); } catch { parsed = []; }
+            let sha = '';
+            try {
+                const meta = JSON.parse(text);
+                sha = meta.sha;
+                parsed = JSON.parse(atob(meta.content));
+            } catch { parsed = []; }
+
+            const data = { content: parsed, sha };
 
             // Update ETag and memory backup
             const newEtag = res.headers.get('ETag');
             if (newEtag) etagStore.set(apiUrl, newEtag);
-            bodyStore.set(apiUrl, parsed);
+            bodyStore.set(apiUrl, data);
 
             // Put into CDN cache (serve stale up to 5 min)
-            const toCache = new Response(JSON.stringify(parsed), {
+            const toCache = new Response(JSON.stringify(data), {
                 status: 200,
                 headers: {
                     'Content-Type': 'application/json',
@@ -538,7 +552,7 @@ export default {
                 etagStore.delete(apiUrl);
                 bodyStore.delete(apiUrl);
             } catch { }
-            return json({ ok: true, content: update?.content }, 200, cors);
+            return json({ ok: true, sha: update?.content?.sha }, 200, cors);
         }
     }
 };
