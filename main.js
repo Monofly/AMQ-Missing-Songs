@@ -417,11 +417,12 @@ function populateYearOptions(items) {
 async function init() {
     try {
         watchToolbarHeight();
-        const isAdminLikely = (localStorage.getItem('wasAdminOrUser') === '1');
-        const res = await fetch(isAdminLikely ? freshApi('/content') : api('/content'), {
+
+        // Always load current content (no forced “fresh” here)
+        const res = await fetch(api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
-            credentials: 'include', // include cookies (not strictly required for GET /content)
+            credentials: 'include',
             cache: 'no-store'
         });
         if (!res.ok) throw new Error(`Load error ${res.status}`);
@@ -450,9 +451,11 @@ async function init() {
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 
         populateYearOptions(DATA);
-        // Restore filters from localStorage before wiring events
+
+        // Restore filters before wiring events
         const saved = loadFilterState();
         setFilterState(saved);
+
         let _filterDebounceTimer = null;
         function applyFiltersDebounced(opts = { resetPage: true }) {
             clearTimeout(_filterDebounceTimer);
@@ -463,6 +466,7 @@ async function init() {
             el.addEventListener('input', () => applyFiltersDebounced({ resetPage: true }));
             el.addEventListener('change', () => applyFiltersDebounced({ resetPage: true }));
         });
+
         wireAdminBar();
 
         // Pager controls
@@ -499,11 +503,6 @@ async function init() {
 
         // Make sure toolbar matches the default (not signed in) state immediately:
         updateAdminVisibility();
-
-        if (localStorage.getItem('wasAdminOrUser') === '1') {
-            await restoreSession();
-            await ensureCsrf();
-        }
         applyFilters({ resetPage: true });
         setToolbarHeight();
     } catch (e) {
@@ -881,10 +880,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
                 DATA_SHA = commitData2.sha;
             }
 
-            // 2) Reconcile in background to align with repo
-            queueBackgroundReconcile();
-
-            // 3) Finish the Save UI instantly
+            // 2) Finish the Save UI instantly
             els.saveNotice.classList.remove('saving');
             els.saveNotice.textContent = 'Saved.';
             setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
@@ -903,11 +899,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
             DATA_SHA = commitData.sha;
         }
 
-        // 2) Do NOT block UI on a full refresh. Reconcile in background.
-        //    Current user already sees the optimistic change.
-        queueBackgroundReconcile();
-
-        // 3) Finish the Save UI instantly
+        // 2) Finish the Save UI instantly
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
@@ -915,45 +907,6 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
     } finally {
         els.saveBtn.disabled = false;
     }
-}
-
-// Background reconcile: re-fetch from server once without blocking the UI.
-// Keeps current user's instant change, then aligns the local list with the repo copy soon after.
-let _reconcileTimer = null;
-function queueBackgroundReconcile() {
-    clearTimeout(_reconcileTimer);
-    _reconcileTimer = setTimeout(async () => {
-        try {
-            await afterCommitUpdateLocal([], DATA_SHA);
-        } catch { /* ignore reconcile errors in background */ }
-    }, 800);
-}
-
-// After a successful commit, refresh DATA locally without losing filters or page
-async function afterCommitUpdateLocal(_payloadArray, newSha) {
-    // Always refresh from server so UI reflects the repo's latest state.
-    const res = await fetch(freshApi('/content'), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        credentials: 'include',
-        cache: 'no-store'
-    });
-    if (!res.ok) throw new Error(`Post-save refresh failed ${res.status}`);
-
-    const fresh = await res.json();
-    const latestArray = Array.isArray(fresh.content) ? fresh.content : [];
-    DATA_SHA = fresh.sha || newSha || DATA_SHA;
-
-    // Rebuild DATA once, sort, and re-index once
-    DATA = latestArray.map((x, i) => ({ ...x, _index: i }));
-    DATA.sort(compareItems);
-    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-
-    const saved = loadFilterState();
-    populateYearOptions(DATA);
-    setFilterState(saved);
-
-    applyFilters({ resetPage: false });
 }
 
 // ===== Editor modal =====
