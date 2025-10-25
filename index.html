@@ -5,17 +5,6 @@
   <meta charset="utf-8" />
   <title>Missing Songs for AMQ</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self';
-    connect-src 'self';
-    img-src 'self';
-    style-src 'self';
-    script-src 'self';
-    object-src 'none';
-    base-uri 'none';
-    form-action 'self';
-    frame-ancestors 'none';
-  ">
   <link rel="icon" href="/favicon.png" type="image/png">
 </head>
 
@@ -85,11 +74,11 @@
     <table class="table" aria-describedby="count">
       <thead>
         <tr>
-          <th style="width: 28%">Anime</th>
-          <th style="width: 30%">Song</th>
-          <th style="width: 26%">Credits</th>
-          <th style="width: 8%">Type</th>
-          <th style="width: 8%">Links</th>
+          <th class="col-anime">Anime</th>
+          <th class="col-song">Song</th>
+          <th class="col-credits">Credits</th>
+          <th class="col-type">Type</th>
+          <th class="col-links">Links</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -193,7 +182,7 @@
 
         <div class="modal-actions">
           <div class="notice" id="modalNotice"></div>
-          <div style="display:flex; gap:8px;">
+          <div class="modal-actions-buttons">
             <button type="button" class="btn secondary" id="cancelBtn">Cancel</button>
             <button type="submit" class="btn" id="saveBtn">Save</button>
           </div>

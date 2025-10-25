@@ -340,6 +340,11 @@ footer {
     margin-top: 12px;
 }
 
+.modal-actions-buttons {
+    display: flex;
+    gap: 8px;
+}
+
 @media (max-width: 900px) {
     .filters {
         grid-template-columns: 1fr 1fr;
@@ -366,6 +371,13 @@ footer {
 thead th {
     background-clip: padding-box;
 }
+
+/* Table column widths (moved from inline styles) */
+th.col-anime { width: 28%; }
+th.col-song { width: 30%; }
+th.col-credits { width: 26%; }
+th.col-type { width: 8%; }
+th.col-links { width: 8%; }
 
 /* Stack fields vertically on the left of Status row */
 .stack {

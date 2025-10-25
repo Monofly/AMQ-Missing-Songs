@@ -15,9 +15,11 @@ export default {
 
         const isApi = API_PATHS.has(url.pathname);
 
-        // If not an API route, serve static files (your site)
+        // If not an API route, serve static files (your site) and add security headers
         if (!isApi && req.method !== 'OPTIONS') {
-            return env.ASSETS.fetch(req);
+            const assetRes = await env.ASSETS.fetch(req);
+            const originForCsp = req.headers.get('Origin') || '';
+            return withSecurityHeadersForAssets(assetRes, originForCsp);
         }
 
         // ==== SECURITY: allowed origins (prod, previews, and local dev) ====
@@ -156,6 +158,35 @@ export default {
             '/commit': { limit: 30, windowMs: 60_000 }
         };
         const buckets = globalThis.__buckets ??= new Map();
+        
+        // Add security headers (including CSP) to static asset responses
+        async function withSecurityHeadersForAssets(res, originForCsp) {
+            // Build a strict CSP that works with your site:
+            // - No inline styles or scripts
+            // - Only self for everything you use
+            const csp = [
+                "default-src 'self'",
+                "script-src 'self'",
+                "style-src 'self'",
+                "img-src 'self'",
+                "connect-src 'self'",
+                "font-src 'self'",
+                "object-src 'none'",
+                "base-uri 'none'",
+                "form-action 'self'",
+                "frame-ancestors 'none'"
+            ].join('; ');
+
+            const headers = new Headers(res.headers);
+            headers.set('Content-Security-Policy', csp);
+            headers.set('X-Content-Type-Options', 'nosniff');
+            headers.set('Referrer-Policy', 'no-referrer');
+            headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+            headers.set('X-Frame-Options', 'DENY');
+            headers.set('Cross-Origin-Resource-Policy', 'same-site');
+
+            return new Response(res.body, { status: res.status, headers });
+        }
 
         function rateLimit(req, path) {
             const cfg = RATE_LIMITS[path];
