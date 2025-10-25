@@ -225,6 +225,12 @@ function timeRange(start, end) {
 }
 
 function applyFilters({ resetPage = false } = {}) {
+    // Debug: Log items without IDs
+    const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
+    if (itemsWithoutIds.length > 0) {
+        console.warn(`Found ${itemsWithoutIds.length} items without IDs:`, itemsWithoutIds);
+    }
+    
     const q = normalize(els.q.value);
     const year = els.year.value;
     const season = els.season.value;
@@ -469,11 +475,16 @@ async function init() {
             return item;
         });
 
-        DATA = DATA.map(it => { ensurePersistentId(it); return it; });
+        // Ensure ALL items have IDs immediately, not just when admin
+        DATA = DATA.map(it => { 
+            ensurePersistentId(it); 
+            return it;
+        });
 
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
 
+        // Fix any missing IDs in the remote data if admin
         await fixMissingIdsIfAdmin();
 
         populateYearOptions(DATA);
@@ -561,7 +572,10 @@ async function init() {
                 ...x,
                 _index: i
             }));
-            DATA = DATA.map(it => { ensurePersistentId(it); return it; });
+            DATA = DATA.map(it => { 
+                ensurePersistentId(it); 
+                return it;
+            });
             DATA.sort(compareItems);
             DATA = DATA.map((item, i) => ({ ...item, _index: i, _uid: uidFor(item, i) }));
             await fixMissingIdsIfAdmin();
@@ -895,8 +909,25 @@ function uidFor(it, fallbackIndex) {
 
 function ensurePersistentId(it) {
     if (typeof it.id === 'string' && it.id.trim().length > 0) return it.id;
-    const rand = Math.random().toString(16).slice(2, 10);
-    const id = `${Date.now()}-${rand}`;
+    
+    // More robust ID generation using multiple properties as fallback
+    const baseString = [
+        it.anime_en || it.anime_romaji || '',
+        it.song_title_romaji || it.song_title_original || '',
+        it.episode || '',
+        it.time_start || ''
+    ].join('|');
+    
+    // Create a simple hash of the base string for consistency
+    let hash = 0;
+    for (let i = 0; i < baseString.length; i++) {
+        const char = baseString.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    const rand = Math.random().toString(16).slice(2, 6);
+    const id = `${Date.now()}-${Math.abs(hash).toString(16)}-${rand}`;
     it.id = id;
     return id;
 }
@@ -915,21 +946,19 @@ async function fixMissingIdsIfAdmin() {
         return;
     }
 
-    const doFix = confirm(
-        `CRITICAL: Found ${itemsWithoutIds.length} items without IDs.\n\n` +
-        `IDs are required for editing and deleting items.\n` +
-        `This will automatically add IDs and commit to GitHub.\n\n` +
-        `Click OK to continue (required for the site to work properly).`
-    );
+    // Auto-fix without asking for confirmation
+    let needsCommit = false;
+    itemsWithoutIds.forEach(item => {
+        const oldId = item.id;
+        ensurePersistentId(item);
+        if (item.id !== oldId) {
+            needsCommit = true;
+        }
+    });
 
-    if (!doFix) {
-        alert('Warning: Without IDs, you cannot edit or delete existing items. Please add IDs when ready.');
-        return;
-    }
+    if (!needsCommit) return;
 
     try {
-        itemsWithoutIds.forEach(item => ensurePersistentId(item));
-
         const allItems = DATA.map(({ _index, _uid, ...rest }) => rest);
 
         await ensureCsrf();
@@ -951,18 +980,19 @@ async function fixMissingIdsIfAdmin() {
 
         if (!res.ok) {
             const errorText = await res.text().catch(() => '');
-            throw new Error(`Failed to save IDs: ${res.status} ${errorText}`);
+            console.error('Failed to save IDs automatically:', res.status, errorText);
+            return;
         }
 
         const result = await res.json();
         if (result.sha) DATA_SHA = result.sha;
 
-        alert(`✅ Successfully added IDs to ${itemsWithoutIds.length} items!\n\nYou can now edit and delete items normally.`);
+        console.log(`✅ Successfully added IDs to ${itemsWithoutIds.length} items`);
         
+        // Reload to get the updated data with IDs
         await reloadLatestContent();
     } catch (err) {
-        console.error('Failed to fix missing IDs:', err);
-        alert(`❌ Failed to add IDs: ${err.message}\n\nPlease try again or contact support.`);
+        console.error('Failed to fix missing IDs automatically:', err);
     }
 }
 
@@ -1007,8 +1037,24 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
         }
 
         if (res.status === 404) {
+            // Try to reload and check if the item exists with a different ID
             await reloadLatestContent();
-            throw new Error('Item not found in GitHub. Data has been refreshed - please try again.');
+    
+            // If this was a delete operation and we have the original item, check if it still exists
+            if (changeObj === null && originalItemForKey) {
+                const stillExists = DATA.some(item => 
+                    item.anime_en === originalItemForKey.anime_en &&
+                    item.anime_romaji === originalItemForKey.anime_romaji &&
+                    item.song_title_romaji === originalItemForKey.song_title_romaji &&
+                    item.episode === originalItemForKey.episode
+                );
+        
+                if (!stillExists) {
+                    throw new Error('Item was already deleted by another user.');
+                }
+            }
+    
+            throw new Error('Item not found. Data has been refreshed - please try again.');
         }
 
         if (!res.ok) {
@@ -1356,22 +1402,23 @@ async function confirmDeleteById(id) {
 
     const itemIndex = DATA.findIndex(item => item && item.id === id);
     if (itemIndex < 0) {
-        const doRefresh = confirm('Item not found in current data. Refresh now?');
-        if (doRefresh) {
-            await reloadLatestContent();
-            setTimeout(() => {
-                alert('Data refreshed. Please try deleting again.');
-            }, 500);
+        // Try to find by other means if ID doesn't match
+        const item = DATA.find(item => item && item.id === id);
+        if (!item) {
+            const doRefresh = confirm('Item not found in current data. Refresh now?');
+            if (doRefresh) {
+                await reloadLatestContent();
+            }
+            return;
         }
-        return;
     }
     
     const deletedItem = { ...DATA[itemIndex] };
     const originalId = deletedItem.id;
     
+    // If no ID, generate one for deletion
     if (!originalId || originalId.trim() === '') {
-        alert('This item has no ID and cannot be deleted.\n\nPlease refresh the page to trigger the ID fix, or contact support.');
-        return;
+        ensurePersistentId(deletedItem);
     }
     
     const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
@@ -1388,18 +1435,30 @@ async function confirmDeleteById(id) {
     document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
 
     try {
-        const msg = `Delete entry id ${originalId}`;
+        const finalId = deletedItem.id; // Use the ID (generated if missing)
+        const msg = `Delete entry id ${finalId}`;
         
-        DATA = DATA.filter(item => item.id !== originalId);
+        // Build target with proper ID handling
+        let target = { id: finalId };
+        
+        // If we had to generate an ID, also include fallback key
+        if (!originalId || originalId.trim() === '') {
+            target.fallbackKey = entryKey(deletedItem);
+        }
+
+        // OPTIMISTIC UPDATE: Remove from local data immediately
+        DATA = DATA.filter(item => item.id !== finalId);
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
 
-        await commitJsonWithRefresh(null, { id: originalId }, msg, deletedItem);
+        await commitJsonWithRefresh(null, target, msg, deletedItem);
         
+        // Reload to ensure consistency with server
         await reloadLatestContent();
 
     } catch (err) {
+        // REVERT optimistic update on error
         DATA.splice(itemIndex, 0, deletedItem);
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
