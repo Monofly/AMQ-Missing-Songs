@@ -857,49 +857,64 @@ async function ensureAdminSession() {
     return isAdmin;
 }
 
-// Central guard used before launching, opening editor, and saving
-// - It refreshes admin session
-// - It checks the latest JSON (with a short retry to outrun CDN lag)
-// - Returns { ok: true } if all good; otherwise { ok: false, reason: '...' }
-async function requireFreshAndAdmin({ retries = 1, delayMs = 500 } = {}) {
-    const admin = await ensureAdminSession();
-    if (!admin) {
-        return { ok: false, reason: 'not_admin' };
-    }
-    
-    // Check JSON freshness with timeout protection
+async function requireFreshAndAdmin({ maxRetries = 2 } = {}) {
+  // First, verify admin session
+  await restoreSession();
+  if (!isAdmin) {
+    return { ok: false, reason: 'not_admin' };
+  }
+  
+  // Check data freshness with retries
+  let retries = 0;
+  while (retries <= maxRetries) {
     try {
-        const fresh = await isFreshAgainstRemoteSha();
-        if (!fresh.ok && fresh.reason === 'stale') {
-            // Try to refresh in background but don't block the user
-            const refreshSuccess = await reloadLatestContent();
-            if (!refreshSuccess) {
-                return { 
-                    ok: false, 
-                    reason: 'stale_json', 
-                    message: 'Your local list is outdated and could not be refreshed automatically. Please refresh the page.' 
-                };
-            }
-            // After refresh, check again
-            const freshAfterRefresh = await isFreshAgainstRemoteSha();
-            if (!freshAfterRefresh.ok) {
-                return { 
-                    ok: false, 
-                    reason: 'stale_json', 
-                    message: 'Your local list is still outdated after refresh. Please try again.' 
-                };
-            }
-        }
-        
+      const remoteSha = await fetchRemoteSha();
+      
+      if (!remoteSha) {
+        // If we can't get remote SHA, proceed with caution
+        console.warn('Could not fetch remote SHA, proceeding with local data');
+        return { ok: true, warning: 'cannot_verify_freshness' };
+      }
+      
+      if (remoteSha === DATA_SHA) {
+        // Data is fresh
         return { ok: true };
+      }
+      
+      // Data is stale, try to refresh
+      if (retries < maxRetries) {
+        console.log(`Data stale (local: ${DATA_SHA}, remote: ${remoteSha}), refreshing...`);
+        const refreshSuccess = await reloadLatestContent();
+        if (refreshSuccess) {
+          // After refresh, check again in next iteration
+          retries++;
+          continue;
+        }
+      }
+      
+      // Refresh failed or max retries reached
+      return { 
+        ok: false, 
+        reason: 'stale_json', 
+        message: 'Your data is outdated. Please refresh the page to get the latest changes.' 
+      };
+      
     } catch (error) {
-        console.error('Fresh check failed:', error);
-        return { 
-            ok: false, 
-            reason: 'check_failed', 
-            message: 'Could not verify data freshness. Please try again.' 
-        };
+      console.error('Fresh check failed:', error);
+      if (retries < maxRetries) {
+        retries++;
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        continue;
+      }
+      return { 
+        ok: false, 
+        reason: 'check_failed', 
+        message: 'Could not verify data freshness. Please try again.' 
+      };
     }
+  }
+  
+  return { ok: false, reason: 'max_retries_exceeded' };
 }
 
 async function loginWithGitHub() {
@@ -1239,6 +1254,12 @@ async function openEditor(index, preset) {
     els.modalBackdrop.hidden = false;
     els.modalBackdrop.setAttribute('aria-hidden', 'false');
 
+    // Set focus to first input field for accessibility
+    setTimeout(() => {
+        const firstInput = els.editForm.querySelector('input, select, textarea');
+        if (firstInput) firstInput.focus();
+    }, 100);
+
     // Auto-save draft on any input change
     const f = els.editForm;
     const onChange = () => saveDraft(indexOrNew);
@@ -1258,7 +1279,19 @@ async function openEditor(index, preset) {
 function closeEditor() {
     els.modalBackdrop.hidden = true;
     els.modalBackdrop.setAttribute('aria-hidden', 'true');
-    // Do NOT clear the form or draft here (only on Save/Cancel)
+  
+    // Clear the form and draft when closing
+    const idxStr = els.editForm.elements._index.value;
+    const indexOrNew = idxStr === '' ? null : Number(idxStr);
+    clearDraft(indexOrNew);
+    els.editForm.reset();
+  
+    // Move focus to a safe element (Add Entry button if admin, otherwise search box)
+    if (isAdmin && els.addBtn) {
+        els.addBtn.focus();
+    } else {
+        els.q.focus();
+    }
 }
 
 function fillForm(it) {
@@ -1367,205 +1400,189 @@ els.cancelBtn.addEventListener('click', () => {
 });
 
 els.editForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const guard = await requireFreshAndAdmin();
-    if (!guard.ok) {
-        if (guard.reason === 'not_admin') {
-            alert('You are not currently signed in with write access. Please sign in again.');
-        } else {
-            alert(guard.message || 'Could not refresh latest data. Please try again.');
-        }
-        return;
+  e.preventDefault();
+  
+  // Double-check admin status and data freshness
+  const guard = await requireFreshAndAdmin();
+  if (!guard.ok) {
+    if (guard.reason === 'not_admin') {
+      alert('You are not currently signed in with write access. Please sign in again.');
+    } else {
+      alert(guard.message || 'Could not refresh latest data. Please try again.');
+    }
+    return;
+  }
+
+  els.modalNotice.textContent = '';
+  els.modalNotice.classList.remove('error');
+
+  const { out, index } = readForm();
+  const originalForKey = index === null ? null : { ...DATA[index] };
+
+  // Additional safety check for existing items
+  if (index !== null) {
+    const currentItem = DATA[index];
+    if (!currentItem || !currentItem.id) {
+      els.modalNotice.textContent = 'Item not found locally. Please refresh and try again.';
+      els.modalNotice.classList.add('error');
+      return;
+    }
+  }
+
+  if (out.year !== '' && (!Number.isFinite(out.year) || String(out.year).length !== 4)) {
+    els.modalNotice.textContent = 'Year must be 4 digits (or leave blank).';
+    els.modalNotice.classList.add('error');
+    return;
+  }
+
+  if (SAVE_QUEUE_BUSY) {
+    els.modalNotice.textContent = 'A save is already in progress. Please wait.';
+    els.modalNotice.classList.add('error');
+    return;
+  }
+  SAVE_QUEUE_BUSY = true;
+
+  try {
+    let target = null;
+    let originalId = null;
+    
+    if (index !== null) {
+      originalId = DATA[index].id;
+      target = { id: originalId };
+    }
+    
+    const msg = index === null ? 'Add entry' : `Edit entry id ${originalId || 'unknown'}`;
+    
+    // OPTIMISTIC UPDATE: Show changes immediately
+    if (index === null) {
+      const newItem = { ...out };
+      ensurePersistentId(newItem);
+      DATA.push(newItem);
+    } else {
+      DATA[index] = { ...DATA[index], ...out, id: originalId };
+    }
+    
+    // Re-sort and update UI immediately
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    applyFilters({ resetPage: false });
+
+    // Final freshness check right before commit
+    const finalCheck = await isFreshAgainstRemoteSha();
+    if (!finalCheck.ok && finalCheck.reason === 'stale') {
+      throw new Error('Data was modified by another user while you were editing. Please refresh and try again.');
     }
 
-    els.modalNotice.textContent = '';
+    await commitJsonWithRefresh(out, target, msg, originalForKey);
+  
+    els.modalNotice.textContent = 'Changes saved successfully!';
     els.modalNotice.classList.remove('error');
-
-    const { out, index } = readForm();
-    const originalForKey = index === null ? null : { ...DATA[index] };
-
-    if (index !== null && (!DATA[index] || !DATA[index].id)) {
-        els.modalNotice.textContent = 'Item not found locally. Refreshing data...';
-        els.modalNotice.classList.add('error');
-        await reloadLatestContent();
-        setTimeout(() => {
-            els.modalNotice.textContent = 'Data refreshed. Please try again.';
-        }, 1000);
-        return;
-    }
-
-    if (out.year !== '' && (!Number.isFinite(out.year) || String(out.year).length !== 4)) {
-        els.modalNotice.textContent = 'Year must be 4 digits (or leave blank).';
-        els.modalNotice.classList.add('error');
-        return;
-    }
-
-    if (SAVE_QUEUE_BUSY) {
-        els.modalNotice.textContent = 'A save is already in progress. Please wait.';
-        els.modalNotice.classList.add('error');
-        return;
-    }
-    SAVE_QUEUE_BUSY = true;
-
-    try {
-        let target = null;
-        let originalId = null;
-        let originalFallbackKey = null;
-        
-        if (index !== null) {
-            originalId = DATA[index].id;
-            originalFallbackKey = entryKey(DATA[index]);
-            
-            target = { id: originalId };
-            if (!originalId || originalId.trim() === '') {
-                target.fallbackKey = originalFallbackKey;
-            }
-        }
-        
-        const msg = index === null ? 'Add entry' : `Edit entry id ${originalId || 'unknown'}`;
-        
-        // OPTIMISTIC UPDATE: Show changes immediately
-        if (index === null) {
-            const newItem = { ...out };
-            ensurePersistentId(newItem);
-            DATA.push(newItem);
-        } else {
-            DATA[index] = { ...DATA[index], ...out, id: originalId };
-        }
-        
-        // Re-sort and update UI immediately
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-        applyFilters({ resetPage: false });
-
-        await commitJsonWithRefresh(out, target, msg, originalForKey);
+    els.modalNotice.classList.add('ok');
+  
+    clearDraft(index === null ? null : index);
+    els.editForm.reset();
     
-        els.modalNotice.textContent = 'Changes saved successfully!';
-        els.modalNotice.classList.remove('error');
-        els.modalNotice.classList.add('ok');
-    
-        clearDraft(index === null ? null : index);
-        els.editForm.reset();
-        
-        setTimeout(async () => {
-            closeEditor();
-            await reloadLatestContent();
-        }, 1500);
-    
-    } catch (err) {
-        // REVERT optimistic update on error
-        if (index === null) {
-            // Remove the added item
-            DATA.pop();
-        } else {
-            // Restore original item
-            DATA[index] = { ...originalForKey };
-        }
-        
-        // Re-sort and update UI
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-        applyFilters({ resetPage: false });
-        
-        els.modalNotice.textContent = String(err.message || err);
-        els.modalNotice.classList.add('error');
-    } finally {
-        SAVE_QUEUE_BUSY = false;
+    setTimeout(async () => {
+      closeEditor();
+      // Reload to ensure consistency with server
+      await reloadLatestContent();
+    }, 1500);
+  
+  } catch (err) {
+    // REVERT optimistic update on error
+    if (index === null) {
+      // Remove the added item
+      DATA.pop();
+    } else if (originalForKey) {
+      // Restore original item if we have it
+      DATA[index] = { ...originalForKey };
     }
+    
+    // Re-sort and update UI
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    applyFilters({ resetPage: false });
+    
+    els.modalNotice.textContent = String(err.message || err);
+    els.modalNotice.classList.add('error');
+  } finally {
+    SAVE_QUEUE_BUSY = false;
+  }
 });
 
 async function confirmDeleteById(id) {
-    const guard = await requireFreshAndAdmin();
-    if (!guard.ok) {
-        if (guard.reason === 'not_admin') {
-            alert('You are not currently signed in with write access. Please sign in again.');
-        } else if (guard.reason === 'stale_json') {
-            const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
-            if (doRefresh) {
-                location.href = location.origin + '/?r=' + Date.now();
-            }
-        } else {
-            alert(guard.message || 'Could not verify permissions. Please try again.');
-        }
-        return;
-    }
-
-    // FIRST: Check if the item exists and has an ID
-    let itemIndex = DATA.findIndex(item => item && item.id === id);
-    
-    // If not found by ID, try to find by other means
-    if (itemIndex < 0) {
-        // Look for any item without ID that might be the one we're trying to delete
-        const itemsWithoutIds = DATA.filter(item => !item.id || item.id.trim() === '');
-        if (itemsWithoutIds.length > 0) {
-            alert(`This item doesn't have an ID. Please use the "Fix missing IDs" button first to assign IDs to all items, then try deleting again.`);
-            return;
-        } else {
-            // Item not found at all
-            const doRefresh = confirm('Item not found in current data. Refresh now?');
-            if (doRefresh) {
-                await reloadLatestContent();
-            }
-            return;
-        }
-    }
-    
-    const deletedItem = { ...DATA[itemIndex] };
-    const originalId = deletedItem.id;
-    
-    // If no ID, generate one for deletion
-    if (!originalId || originalId.trim() === '') {
-        ensurePersistentId(deletedItem);
-    }
-    
-    const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
-    const anime = deletedItem?.anime_en || deletedItem?.anime_romaji || '(unknown)';
-    
-    if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
-
-    if (SAVE_QUEUE_BUSY) {
-        alert('A save is already in progress. Please wait.');
-        return;
-    }
-    SAVE_QUEUE_BUSY = true;
-
-    document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
-
-    try {
-        const finalId = deletedItem.id; // Use the ID (generated if missing)
-        const msg = `Delete entry id ${finalId}`;
-        
-        // Build target with proper ID handling
-        let target = { id: finalId };
-        
-        // If we had to generate an ID, also include fallback key
-        if (!originalId || originalId.trim() === '') {
-            target.fallbackKey = entryKey(deletedItem);
-        }
-
-        // OPTIMISTIC UPDATE: Remove from local data immediately
-        DATA = DATA.filter(item => item.id !== finalId);
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-        applyFilters({ resetPage: false });
-
-        await commitJsonWithRefresh(null, target, msg, deletedItem);
-        
-        // Reload to ensure consistency with server
+  // First, verify admin session and data freshness
+  const guard = await requireFreshAndAdmin();
+  if (!guard.ok) {
+    if (guard.reason === 'not_admin') {
+      alert('You are not currently signed in with write access. Please sign in again.');
+    } else if (guard.reason === 'stale_json') {
+      const doRefresh = confirm('Your local list is outdated. Refresh now to continue?');
+      if (doRefresh) {
         await reloadLatestContent();
-
-    } catch (err) {
-        // REVERT optimistic update on error
-        DATA.splice(itemIndex, 0, deletedItem);
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-        applyFilters({ resetPage: false });
-    
-        alert(`Delete failed: ${err.message || err}`);
-    } finally {
-        document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = false);
-        SAVE_QUEUE_BUSY = false;
+      }
+    } else {
+      alert(guard.message || 'Could not verify permissions. Please try again.');
     }
+    return;
+  }
+
+  // Find the item to delete
+  let itemIndex = DATA.findIndex(item => item && item.id === id);
+  
+  if (itemIndex < 0) {
+    alert('Item not found in current data. It may have been already deleted.');
+    return;
+  }
+  
+  const deletedItem = { ...DATA[itemIndex] };
+  const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
+  const anime = deletedItem?.anime_en || deletedItem?.anime_romaji || '(unknown)';
+  
+  if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
+
+  if (SAVE_QUEUE_BUSY) {
+    alert('A save is already in progress. Please wait.');
+    return;
+  }
+  SAVE_QUEUE_BUSY = true;
+
+  // Disable all delete buttons during operation
+  document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
+
+  try {
+    // Final freshness check
+    const finalCheck = await isFreshAgainstRemoteSha();
+    if (!finalCheck.ok && finalCheck.reason === 'stale') {
+      throw new Error('Data was modified by another user. Please refresh and try again.');
+    }
+
+    const msg = `Delete entry id ${deletedItem.id}`;
+    const target = { id: deletedItem.id };
+
+    // OPTIMISTIC UPDATE: Remove from local data immediately
+    DATA = DATA.filter(item => item.id !== deletedItem.id);
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    applyFilters({ resetPage: false });
+
+    await commitJsonWithRefresh(null, target, msg, deletedItem);
+    
+    // Success - data is already updated optimistically
+    
+  } catch (err) {
+    // REVERT optimistic update on error
+    DATA.splice(itemIndex, 0, deletedItem);
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    applyFilters({ resetPage: false });
+  
+    alert(`Delete failed: ${err.message || err}`);
+  } finally {
+    // Re-enable delete buttons
+    document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = false);
+    SAVE_QUEUE_BUSY = false;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => setToolbarHeight());
