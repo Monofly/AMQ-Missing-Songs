@@ -590,17 +590,8 @@ export default {
             if (!token) return json({ error: 'Unauthorized' }, 401, cors);
 
             const body = await req.json().catch(() => ({}));
-            const { content, message, baseSha } = body || {};
-            if (!Array.isArray(content)) return json({ error: 'Invalid content (expected array)' }, 400, cors);
-
-            for (const item of content) {
-                if (item.ann_url && !isAllowedUrl(item.ann_url, ['www.animenewsnetwork.com', 'animenewsnetwork.com'])) {
-                    return json({ error: 'Invalid ann_url' }, 400, cors);
-                }
-                if (item.mal_url && !isAllowedUrl(item.mal_url, ['myanimelist.net'])) {
-                    return json({ error: 'Invalid mal_url' }, 400, cors);
-                }
-            }
+            const { change, target, message, baseSha } = body || {};
+    
             if (!message) return json({ error: 'Missing commit message' }, 400, cors);
 
             const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
@@ -610,12 +601,49 @@ export default {
                 { headers }
             ).then(r => r.json());
 
-            const payloadStr = JSON.stringify(content, null, 2) + '\n';
+            let currentData = [];
+            try {
+                const decodedContent = b64DecodeUnicode(meta.content);
+                currentData = JSON.parse(decodedContent);
+            } catch {
+                return json({ error: 'Failed to parse current GitHub data' }, 500, cors);
+            }
+
+            let working = currentData.slice();
+
+            if (target && target.id) {
+                if (change === null) {
+                    const beforeLength = working.length;
+                    working = working.filter(x => x.id !== target.id);
+                    const afterLength = working.length;
+            
+                    if (beforeLength === afterLength) {
+                        return json({ error: 'Item not found for deletion.' }, 404, cors);
+                    }
+                } else {
+                    const idx = working.findIndex(x => x.id === target.id);
+                    if (idx < 0) return json({ error: 'Item not found for edit.' }, 404, cors);
+                    working[idx] = { ...working[idx], ...change, id: target.id };
+                }
+            } else {
+                if (change === null) return json({ error: 'Cannot delete a new unsaved entry.' }, 400, cors);
+                working.push(change);
+            }
+
+            for (const item of working) {
+                if (item.ann_url && !isAllowedUrl(item.ann_url, ['www.animenewsnetwork.com', 'animenewsnetwork.com'])) {
+                    return json({ error: 'Invalid ann_url' }, 400, cors);
+                }
+                if (item.mal_url && !isAllowedUrl(item.mal_url, ['myanimelist.net'])) {
+                    return json({ error: 'Invalid mal_url' }, 400, cors);
+                }
+            }
+
+            const payloadStr = JSON.stringify(working, null, 2) + '\n';
             if (payloadStr.length > 500_000) {
                 return json({ error: 'Payload too large' }, 413, cors);
             }
 
-            // Try to update once, and if GitHub signals a conflict, refetch meta and retry once.
             async function tryUpdateWithMeta(currentMeta) {
                 return await ghFetch(
                     `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}`,
@@ -636,7 +664,6 @@ export default {
             try {
                 update = await tryUpdateWithMeta(meta);
             } catch (e) {
-                // If the first PUT throws due to GitHub rejecting the sha, refetch meta and retry once.
                 const meta2 = await ghFetch(
                     `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}?ref=${BRANCH}`,
                     { headers }
@@ -644,12 +671,10 @@ export default {
                 update = await tryUpdateWithMeta(meta2);
             }
 
-            // Purge CDN cache for /content so changes show immediately
             try {
                 const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
                 await caches.default.delete(cacheKey);
             } catch { }
-            // Also clear in-memory ETag/body so next read refetches
             try {
                 const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
                 const etagStore = (globalThis.__etagStore ??= new Map());

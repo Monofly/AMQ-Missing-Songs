@@ -914,32 +914,10 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
     try {
         await ensureCsrf();
 
-        let working = DATA.slice(); // Start with current DATA
-
-        if (target && target.id) {
-            if (changeObj === null) {
-                const beforeLength = working.length;
-                working = working.filter(x => x.id !== target.id);
-                const afterLength = working.length;
-        
-                if (beforeLength === afterLength) {
-                    throw new Error('Item not found for deletion.');
-                }
-            } else {
-                // EDIT: Update existing item
-                const idx = working.findIndex(x => x.id === target.id);
-                if (idx < 0) throw new Error('Item not found for edit.');
-                working[idx] = { ...working[idx], ...changeObj, id: target.id };
-            }
-        } else {
-            // ADD: Create new item
-            if (changeObj === null) throw new Error('Cannot delete a new unsaved entry.');
-            const newItem = { ...changeObj };
-            ensurePersistentId(newItem);
-            working.push(newItem);
-        }
-
-        const payloadArray = working.map(({ _index, _uid, ...rest }) => rest);
+        const change = changeObj === null ? null : (() => {
+            const { _index, _uid, ...rest } = changeObj;
+            return rest;
+        })();
 
         const res = await fetch(api('/commit'), {
             method: 'POST',
@@ -949,7 +927,12 @@ async function commitJsonWithRefresh(changeObj, target, commitMessage, originalI
                 'X-CSRF-Token': CSRF
             },
             credentials: 'include',
-            body: JSON.stringify({ content: payloadArray, message: commitMessage, baseSha: DATA_SHA })
+            body: JSON.stringify({ 
+                change, 
+                target, 
+                message: commitMessage, 
+                baseSha: DATA_SHA 
+            })
         });
 
         if (res.status === 409) {
