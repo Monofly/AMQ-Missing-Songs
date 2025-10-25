@@ -50,6 +50,7 @@ function setToolbarHeight() {
 
 // Helper to build same-origin API URLs
 const api = (p) => p;
+const freshApi = (p) => `${p}?fresh=1&ts=${Date.now()}`;
 
 let DATA = [];
 let DATA_SHA = '';
@@ -416,7 +417,8 @@ function populateYearOptions(items) {
 async function init() {
     try {
         watchToolbarHeight();
-        const res = await fetch(api('/content'), {
+        const isAdminLikely = (localStorage.getItem('wasAdminOrUser') === '1');
+        const res = await fetch(isAdminLikely ? freshApi('/content') : api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             credentials: 'include', // include cookies (not strictly required for GET /content)
@@ -620,7 +622,7 @@ async function restoreSession() {
 }
 
 async function ensureFreshData() {
-    const res = await fetch(api('/content'), {
+    const res = await fetch(freshApi('/content'), {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
         credentials: 'include',
@@ -728,10 +730,11 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
     els.saveBtn.disabled = true;
     show(els.saveNotice);
     els.saveNotice.textContent = 'Saving…';
+    els.saveNotice.classList.add('saving');
     try {
         await ensureCsrf();
 
-        const freshRes = await fetch(api('/content'), {
+        const freshRes = await fetch(freshApi('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             credentials: 'include',
@@ -810,7 +813,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 
         if (res.status === 409) {
             const j = await res.json().catch(() => ({}));
-            const freshRes2 = await fetch(api('/content'), {
+            const freshRes2 = await fetch(freshApi('/content'), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' },
                 credentials: 'include',
@@ -866,6 +869,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             
             const commitData2 = await res2.json();
             await afterCommitUpdateLocal(payloadArray2, commitData2.sha);
+            els.saveNotice.classList.remove('saving');
             els.saveNotice.textContent = 'Saved.';
             setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
             return;
@@ -878,6 +882,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 
         const commitData = await res.json();
         await afterCommitUpdateLocal(payloadArray, commitData.sha);
+        els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
         setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
 
@@ -889,7 +894,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 // After a successful commit, refresh DATA locally without losing filters or page
 async function afterCommitUpdateLocal(_payloadArray, newSha) {
     // Always refresh from server so UI reflects the repo's latest state.
-    const res = await fetch(api('/content'), {
+    const res = await fetch(freshApi('/content'), {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
         credentials: 'include',
@@ -1119,14 +1124,6 @@ els.editForm.addEventListener('submit', async (e) => {
         return;
     }
 
-    // Always re-verify session just before saving
-    await restoreSession();
-    if (!isAdmin) {
-        els.modalNotice.textContent = 'You are not authorized to save.';
-        els.modalNotice.classList.add('error');
-        return;
-    }
-
     els.modalNotice.textContent = '';
     els.modalNotice.classList.remove('error');
 
@@ -1145,6 +1142,20 @@ els.editForm.addEventListener('submit', async (e) => {
         return;
     }
     SAVE_QUEUE_BUSY = true;
+
+    // Update DATA locally so the UI reflects changes immediately
+    if (index === null) {
+        // Optimistic add
+        const newItem = { ...out, _index: DATA.length };
+        DATA.push(newItem);
+    } else {
+        // Optimistic edit
+        DATA[index] = { ...DATA[index], ...out };
+    }
+    // Re-sort and re-index once for consistent display
+    DATA.sort(compareItems);
+    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    applyFilters({ resetPage: false });
 
     try {
         const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;

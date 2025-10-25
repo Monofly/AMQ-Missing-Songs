@@ -372,6 +372,7 @@ export default {
         }
 
         async function getContent(cors, OWNER, REPO, BRANCH, CONTENT_PATH) {
+            const isFresh = (new URL(req.url).searchParams.get('fresh') === '1');
             const apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${encodeURIComponent(CONTENT_PATH)}?ref=${BRANCH}`;
 
             // 0) In-memory helpers (per runtime instance)
@@ -379,17 +380,19 @@ export default {
             const bodyStore = (globalThis.__bodyStore ??= new Map());
 
             // 1) Try CDN cache first (fast path)
-            const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
-            const cached = await caches.default.match(cacheKey);
-            if (cached) {
-                const body = await cached.text();
-                return json(JSON.parse(body), 200, cors, {
-                    'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
-                });
+            if (!isFresh) {
+                const cacheKey = new Request(new URL('/content', 'https://dummy').href, { method: 'GET' });
+                const cached = await caches.default.match(cacheKey);
+                if (cached) {
+                    const body = await cached.text();
+                    return json(JSON.parse(body), 200, cors, {
+                        'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
+                    });
+                }
             }
 
             // 2) Conditional request to GitHub with ETag
-            const prevEtag = etagStore.get(apiUrl);
+            const prevEtag = !isFresh ? etagStore.get(apiUrl) : undefined;
             // build headers for GitHub read
             const headers = new Headers({
                 'Accept': 'application/vnd.github+json',
@@ -402,7 +405,7 @@ export default {
             const res = await fetch(apiUrl, { headers, cache: 'no-store' });
 
             // 304 = Not Modified. Use cache/memory fallback; if empty, do one unconditional fetch.
-            if (res.status === 304) {
+            if (!isFresh && res.status === 304) {
                 // 2a) Try CDN cache again (another POP might have warmed it)
                 const stale = await caches.default.match(cacheKey);
                 if (stale) {
@@ -441,23 +444,31 @@ export default {
                 } catch { parsed2 = [];
                 }
 
-                const newEtag2 = res2.headers.get('ETag');
-                if (newEtag2) etagStore.set(apiUrl, newEtag2);
-
                 data2 = { content: parsed2, sha: sha2 }; // Assign final data2
 
-                // store in memory and CDN cache
-                bodyStore.set(apiUrl, data2);
-                const toCache2 = new Response(JSON.stringify(data2), {
-                    status: 200,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
-                    }
-                });
-                await caches.default.put(cacheKey, toCache2.clone());
+                if (!isFresh) {
+                    const newEtag2 = res2.headers.get('ETag');
+                    if (newEtag2) etagStore.set(apiUrl, newEtag2);
+                    bodyStore.set(apiUrl, data2);
 
-                return json(data2, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
+                    const toCache = new Response(JSON.stringify(data2), {
+                        status: 200,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
+                        }
+                    });
+                    await caches.default.put(cacheKey, toCache.clone());
+                }
+
+                return json(
+                    data2,
+                    200,
+                    cors,
+                    isFresh
+                        ? { 'Cache-Control': 'no-store' }
+                        : { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' }
+                );
             }
 
             // Any non-2xx, non-304 => error
@@ -482,21 +493,29 @@ export default {
             data = { content: parsed, sha }; // Assign final data
 
             // Update ETag and memory backup
-            const newEtag = res.headers.get('ETag');
-            if (newEtag) etagStore.set(apiUrl, newEtag);
-            bodyStore.set(apiUrl, data);
+            if (!isFresh) {
+                const newEtag = res.headers.get('ETag');
+                if (newEtag) etagStore.set(apiUrl, newEtag);
+                bodyStore.set(apiUrl, data);
 
-            // Put into CDN cache (serve stale up to 5 min)
-            const toCache = new Response(JSON.stringify(data), {
-                status: 200,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
-                }
-            });
-            await caches.default.put(cacheKey, toCache.clone());
+                const toCache = new Response(JSON.stringify(data), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800'
+                    }
+                });
+                await caches.default.put(cacheKey, toCache.clone());
+            }
 
-            return json(data, 200, cors, { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' });
+            return json(
+                data,
+                200,
+                cors,
+                isFresh
+                    ? { 'Cache-Control': 'no-store' }
+                    : { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=1800' }
+            );
         }
 
         function isAllowedUrl(s, hosts) {
