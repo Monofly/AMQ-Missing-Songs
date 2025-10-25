@@ -453,8 +453,15 @@ async function init() {
         // Restore filters from localStorage before wiring events
         const saved = loadFilterState();
         setFilterState(saved);
+        let _filterDebounceTimer = null;
+        function applyFiltersDebounced(opts = { resetPage: true }) {
+            clearTimeout(_filterDebounceTimer);
+            _filterDebounceTimer = setTimeout(() => applyFilters(opts), 180);
+        }
+
         [els.q, els.year, els.season, els.type, els.status].forEach(el => {
-            el.addEventListener('input', () => applyFilters({ resetPage: true }));
+            el.addEventListener('input', () => applyFiltersDebounced({ resetPage: true }));
+            el.addEventListener('change', () => applyFiltersDebounced({ resetPage: true }));
         });
         wireAdminBar();
 
@@ -868,10 +875,19 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             }
             
             const commitData2 = await res2.json();
-            await afterCommitUpdateLocal(payloadArray2, commitData2.sha);
+
+            // 1) Update local SHA immediately
+            if (commitData2.sha) {
+                DATA_SHA = commitData2.sha;
+            }
+
+            // 2) Reconcile in background to align with repo
+            queueBackgroundReconcile();
+
+            // 3) Finish the Save UI instantly
             els.saveNotice.classList.remove('saving');
             els.saveNotice.textContent = 'Saved.';
-            setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
+            setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
             return;
         }
 
@@ -881,14 +897,36 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         }
 
         const commitData = await res.json();
-        await afterCommitUpdateLocal(payloadArray, commitData.sha);
+
+        // 1) Update local SHA immediately (so future freshness checks compare correctly)
+        if (commitData.sha) {
+            DATA_SHA = commitData.sha;
+        }
+
+        // 2) Do NOT block UI on a full refresh. Reconcile in background.
+        //    Current user already sees the optimistic change.
+        queueBackgroundReconcile();
+
+        // 3) Finish the Save UI instantly
         els.saveNotice.classList.remove('saving');
         els.saveNotice.textContent = 'Saved.';
-        setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 2000);
+        setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
 
     } finally {
         els.saveBtn.disabled = false;
     }
+}
+
+// Background reconcile: re-fetch from server once without blocking the UI.
+// Keeps current user's instant change, then aligns the local list with the repo copy soon after.
+let _reconcileTimer = null;
+function queueBackgroundReconcile() {
+    clearTimeout(_reconcileTimer);
+    _reconcileTimer = setTimeout(async () => {
+        try {
+            await afterCommitUpdateLocal([], DATA_SHA);
+        } catch { /* ignore reconcile errors in background */ }
+    }, 800);
 }
 
 // After a successful commit, refresh DATA locally without losing filters or page
@@ -1152,10 +1190,14 @@ els.editForm.addEventListener('submit', async (e) => {
         // Optimistic edit
         DATA[index] = { ...DATA[index], ...out };
     }
-    // Re-sort and re-index once for consistent display
-    DATA.sort(compareItems);
-    DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+    // Defer heavy sorting/indexing slightly to keep UI responsive on Save.
+    // The current page updates instantly; resort happens a moment later.
     applyFilters({ resetPage: false });
+    setTimeout(() => {
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        applyFilters({ resetPage: false });
+    }, 50);
 
     try {
         const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
