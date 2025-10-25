@@ -969,6 +969,58 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage, originalIt
     }
 }
 
+async function commitDeleteNoFresh(index, commitMessage) {
+    els.saveBtn?.disabled && (els.saveBtn.disabled = true);
+    show(els.saveNotice);
+    els.saveNotice.textContent = 'Deleting…';
+    els.saveNotice.classList.add('saving');
+
+    try {
+        await ensureCsrf();
+
+        // Build payload from current local DATA without reloading JSON
+        const newArray = DATA
+            .filter((_, i) => i !== index)
+            .map(({ _index, ...rest }) => rest);
+
+        const res = await fetch(api('/commit'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-Token': CSRF
+            },
+            credentials: 'include',
+            body: JSON.stringify({ content: newArray, message: commitMessage, baseSha: DATA_SHA })
+        });
+
+        if (res.status === 409) {
+            // Conflict: tell user to refresh; do NOT recheck JSON here
+            const txt = await res.text().catch(() => '');
+            throw new Error('Delete conflict detected. Please refresh the page and try again.');
+        }
+
+        if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(`Delete failed: ${res.status} ${txt}`);
+        }
+
+        const commitData = await res.json();
+
+        // Update local SHA so later freshness checks compare correctly
+        if (commitData.sha) {
+            DATA_SHA = commitData.sha;
+        }
+
+        // Finish the delete UI
+        els.saveNotice.classList.remove('saving');
+        els.saveNotice.textContent = 'Deleted.';
+        setTimeout(() => { hide(els.saveNotice); setToolbarHeight(); }, 1200);
+    } finally {
+        els.saveBtn?.disabled && (els.saveBtn.disabled = false);
+    }
+}
+
 // ===== Editor modal =====
 
 function buildPresetFromShow(it) {
@@ -1254,13 +1306,29 @@ async function confirmDelete(index) {
     }
     SAVE_QUEUE_BUSY = true;
 
+    // Disable all delete buttons temporarily
+    document.querySelectorAll('[data-delete]').forEach(b => b.disabled = true);
+
     try {
         const msg = `Delete entry at index ${index}`;
-        await commitJsonWithRefresh(null, index, msg);
+
+        // Optimistically update local DATA immediately
+        DATA.splice(index, 1);
+        DATA.sort(compareItems);
+        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
+        applyFilters({ resetPage: false });
+
+        // Commit without rechecking JSON during delete
+        await commitDeleteNoFresh(index, msg);
+
         clearDraft(index);
     } catch (err) {
         alert(`Delete failed: ${err.message || err}`);
+        // Optional: restore UI if needed by refetching fresh after an error
+        // Not required by your instruction, so we leave UI as-is.
     } finally {
+        // Re-enable delete buttons
+        document.querySelectorAll('[data-delete]').forEach(b => b.disabled = false);
         SAVE_QUEUE_BUSY = false;
     }
 }
