@@ -616,6 +616,25 @@ async function restoreSession() {
     updateAdminVisibility();
 }
 
+async function ensureFreshData() {
+    const res = await fetch(api('/content'));
+    const { sha: latestSha, content: encoded } = await res.json();
+    const latestData = JSON.parse(atob(encoded));
+
+    if (typeof DATA_SHA === 'string' && DATA_SHA && DATA_SHA !== latestSha) {
+        // Update UI and abort modification
+        DATA = latestData.map((x, i) => ({ ...x, _index: i }));
+        DATA_SHA = latestSha;
+        const savedFilters = loadFilterState();
+        populateYearOptions(DATA);
+        setFilterState(savedFilters);
+        applyFilters({ resetPage: false });
+        throw new Error(
+            'Server data updated while you were editing. The list has been refreshed — please re-open the editor.'
+        );
+    }
+}
+
 async function loginWithGitHub() {
     // 1) Start device flow via Worker
     const start = await fetch(api('/oauth/device-code'), {
@@ -709,6 +728,22 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         });
         if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
         const freshData = await freshRes.json();
+        // ---- START: check for server-side updates (prevent 409 loop) ----
+        // If our local DATA_SHA doesn't match the freshly fetched file SHA, 
+        // update local DATA now and abort the save so the user edits the freshest copy.
+        if (typeof DATA_SHA === 'string' && DATA_SHA && freshSha && DATA_SHA !== freshSha) {
+            // Update local data (keep UI + filters stable)
+            DATA = (freshArray || []).map((x, i) => ({ ...x, _index: i }));
+            DATA_SHA = freshSha;
+            const savedFilters = loadFilterState();
+            populateYearOptions(DATA);
+            setFilterState(savedFilters);
+            applyFilters({ resetPage: false });
+        // Tell the caller that the content changed so they can re-open the editor
+        throw new Error('Data on the server changed since you opened the editor. The local list has been updated — please re-open the editor and try again.');
+        }
+        // ---- END ----
+
         const freshArray = freshData.content;
         const freshSha = freshData.sha;
         const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
@@ -885,6 +920,12 @@ function buildPresetFromShow(it) {
 }
 
 function openEditor(index, preset) {
+    // Ensure session state is up-to-date before showing the editor
+    await restoreSession();
+    if (!isAdmin) {
+        alert('You are not currently signed in with write access. Please sign in again.');
+        return;
+    }
     els.modalNotice.textContent = '';
     const isNew = (index === null || index === undefined);
     const indexOrNew = isNew ? null : index;
@@ -1036,6 +1077,18 @@ els.cancelBtn.addEventListener('click', () => {
 
 els.editForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    await restoreSession();
+    if (!isAdmin) {
+        alert('You are not currently signed in with write access. Please sign in again.');
+        return;
+    }
+
+    try {
+        await ensureFreshData();
+    } catch (err) {
+        alert(err.message);
+        return;
+    }
 
     // Always re-verify session just before saving
     await restoreSession();
@@ -1079,10 +1132,21 @@ els.editForm.addEventListener('submit', async (e) => {
 });
 
 async function confirmDelete(index) {
+    // Always refresh admin session first
+    await restoreSession();
     if (!isAdmin) {
-        alert('You are not authorized to delete.');
+        alert('You are not currently signed in with write access. Please sign in again.');
         return;
     }
+
+    // Recheck latest data before deletion
+    try {
+        await ensureFreshData();
+    } catch (err) {
+        alert(err.message);
+        return;
+    }
+
     const it = DATA[index];
     const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
     const anime = it?.anime_en || it?.anime_romaji || '(unknown)';
@@ -1097,7 +1161,6 @@ async function confirmDelete(index) {
     try {
         const msg = `Delete entry at index ${index}`;
         await commitJsonWithRefresh(null, index, msg);
-
         clearDraft(index);
     } catch (err) {
         alert(`Delete failed: ${err.message || err}`);
