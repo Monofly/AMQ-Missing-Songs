@@ -61,6 +61,8 @@ const PAGE_SIZE = 50;
 let currentPage = 1;
 let lastFiltered = [];
 
+let SAVE_QUEUE_BUSY = false;
+
 // Persisted filter state
 const FILTER_KEYS = ['q', 'year', 'season', 'type', 'status'];
 function getFilterState() {
@@ -149,12 +151,11 @@ function durationSeconds(start, end) {
 // Consistent “complete” definition used by filters and tags
 function isComplete(it) {
     const hasArtist = !isEmpty(it.artist_romaji) || !isEmpty(it.artist_original);
-    const hasAnn = !!it.ann_url;
     const hasMal = !!it.mal_url;
     const hasIssues = Array.isArray(it.issues) && it.issues.length > 0;
     const cleanOK = it.clean_available !== false;
     const unidentified = !!it.unidentified;
-    return hasArtist && hasAnn && hasMal && cleanOK && !hasIssues && !unidentified;
+    return hasArtist && hasMal && cleanOK && !hasIssues && !unidentified;
 }
 
 // Multi-key comparator: anime title -> episode -> start time
@@ -177,7 +178,6 @@ function statusTags(item) {
     const tags = [];
     if (item.unidentified) tags.push({ cls: 'bad', text: 'Unidentified' });
     if (item.clean_available === false) tags.push({ cls: 'warn', text: 'Missing clean' });
-    if (!item.ann_url) tags.push({ cls: 'warn', text: 'Missing ANN' });
     if (!item.mal_url) tags.push({ cls: 'warn', text: 'Missing MAL' });
 
     if (isEmpty(item.artist_romaji) && isEmpty(item.artist_original)) {
@@ -239,7 +239,6 @@ function applyFilters({ resetPage = false } = {}) {
                 if (status === 'unidentified' && !it.unidentified) return false;
                 if (status === 'missing_clean' && it.clean_available !== false) return false;
                 if (status === 'missing_artist' && !(isEmpty(it.artist_romaji) && isEmpty(it.artist_original))) return false;
-                if (status === 'missing_ann' && !!it.ann_url) return false;
                 if (status === 'missing_mal' && !!it.mal_url) return false;
                 if (status === 'has_issues' && !(Array.isArray(it.issues) && it.issues.length)) return false;
                 if (status === 'no_issues' && !isComplete(it)) return false;
@@ -696,9 +695,6 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
     try {
         await ensureCsrf();
 
-        // 1) Load freshest content and compute baseSha by asking the worker for meta via commit probe
-        // We can reuse /content for body. For SHA, we do a small probe through commit meta step by requesting PUT metadata with no changes,
-        // but simpler: ask the commit endpoint to compare using baseSha later. We'll obtain currentSha by calling /content first.
         const freshRes = await fetch(api('/content'), {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
@@ -708,11 +704,9 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         if (!freshRes.ok) throw new Error(`Refresh failed ${freshRes.status}`);
         const freshArray = await freshRes.json();
 
-        // Build maps for matching
         const freshWithIndex = freshArray.map((x, i) => ({ ...x, _index: i }));
         const freshKeys = new Map(freshWithIndex.map(x => [entryKey(x), x._index]));
 
-        // Compute target key from current DATA (for edit) or from changeObj (for add)
         let targetKey;
         if (index === null) {
             targetKey = entryKey(changeObj);
@@ -721,23 +715,18 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
             targetKey = entryKey(currentIt);
         }
 
-        // 2) Apply change on top of fresh data
         let newArray = freshArray.slice();
         if (index === null) {
-            // Add new
             newArray.push(changeObj);
         } else {
-            // Edit existing: find by key in fresh data
             const matchIdx = freshKeys.has(targetKey) ? freshKeys.get(targetKey) : null;
             if (matchIdx === null || matchIdx === undefined) {
-                // If not found, append to avoid deleting someone else's new item
                 newArray.push(changeObj);
             } else {
                 newArray[matchIdx] = { ...newArray[matchIdx], ...changeObj };
             }
         }
 
-        // 3) Send commit with baseSha protection
         const payloadArray = newArray.map(({ _index, ...rest }) => rest);
         const res = await fetch(api('/commit'), {
             method: 'POST',
@@ -751,9 +740,7 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
         });
 
         if (res.status === 409) {
-            // Out of date → retry once with freshest data
             const j = await res.json().catch(() => ({}));
-            // Re-fetch latest and redo merge
             const freshRes2 = await fetch(api('/content'), {
                 method: 'GET',
                 headers: { 'Accept': 'application/json' },
@@ -839,52 +826,6 @@ async function afterCommitUpdateLocal(payloadArray) {
 
     // Reapply filters without resetting page
     applyFilters({ resetPage: false });
-}
-
-async function commitJson(newArray, commitMessage) {
-    els.saveBtn.disabled = true;
-    show(els.saveNotice);
-    els.saveNotice.textContent = 'Saving…';
-    try {
-        await ensureCsrf();
-        // Strip UI-only fields
-        const payloadArray = newArray.map(({ _index, ...rest }) => rest);
-
-        const res = await fetch(api('/commit'), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-Token': CSRF
-            },
-            credentials: 'include',
-            body: JSON.stringify({ content: payloadArray, message: commitMessage })
-        });
-
-        if (!res.ok) {
-            const txt = await res.text().catch(() => '');
-            throw new Error(`Save failed: ${res.status} ${txt}`);
-        }
-
-        // Update local DATA and UI from our payload (sorted and re-indexed)
-        const payload = JSON.stringify(payloadArray, null, 2) + '\n';
-        DATA = JSON.parse(payload).map((x, i) => ({ ...x, _index: i }));
-        DATA.sort(compareItems);
-        DATA = DATA.map((item, i) => ({ ...item, _index: i }));
-
-        els.saveNotice.textContent = 'Saved.';
-        setTimeout(() => {
-            hide(els.saveNotice);
-            setToolbarHeight();
-        }, 2000);
-        populateYearOptions(DATA);
-        applyFilters();
-
-    } catch (e) {
-        els.saveNotice.textContent = 'Save failed. ' + e.message;
-    } finally {
-        els.saveBtn.disabled = false;
-    }
 }
 
 // ===== Editor modal =====
@@ -1081,6 +1022,13 @@ els.editForm.addEventListener('submit', async (e) => {
         return;
     }
 
+    if (SAVE_QUEUE_BUSY) {
+        els.modalNotice.textContent = 'A save is already in progress. Please wait.';
+        els.modalNotice.classList.add('error');
+        return;
+    }
+    SAVE_QUEUE_BUSY = true;
+
     try {
         const msg = index === null ? 'Add entry' : `Edit entry at index ${index}`;
         await commitJsonWithRefresh(out, index, msg);
@@ -1097,13 +1045,31 @@ els.editForm.addEventListener('submit', async (e) => {
 });
 
 async function confirmDelete(index) {
-    if (!isAdmin) return alert('You are not authorized to delete.');
+    if (!isAdmin) {
+        alert('You are not authorized to delete.');
+        return;
+    }
     const it = DATA[index];
     const title = it?.song_title_romaji || it?.song_title_original || '(untitled)';
-    if (!confirm(`Delete this entry?\n\nAnime: ${it?.anime_en || it?.anime_romaji || '(unknown)'}\nSong: ${title}`)) return;
+    const anime = it?.anime_en || it?.anime_romaji || '(unknown)';
+    if (!confirm(`Delete this entry?\n\nAnime: ${anime}\nSong: ${title}`)) return;
 
-    const newArray = DATA.filter((_, i) => i !== index);
-    await commitJson(newArray, `Delete entry at index ${index}`);
+    if (SAVE_QUEUE_BUSY) {
+        alert('A save is already in progress. Please wait.');
+        return;
+    }
+    SAVE_QUEUE_BUSY = true;
+
+    try {
+        const msg = `Delete entry at index ${index}`;
+        await commitJsonWithRefresh(null, index, msg);
+
+        clearDraft(index);
+    } catch (err) {
+        alert(`Delete failed: ${err.message || err}`);
+    } finally {
+        SAVE_QUEUE_BUSY = false;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => setToolbarHeight());
