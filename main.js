@@ -1263,24 +1263,28 @@ els.editForm.addEventListener('submit', async (e) => {
 
     try {
         let target = null;
+        let originalId = null;
+        let originalFallbackKey = null;
+        
         if (index !== null) {
-            target = { id: DATA[index].id };
-            if (!target.id || target.id.trim() === '') {
-                target.fallbackKey = entryKey(DATA[index]);
+            originalId = DATA[index].id;
+            originalFallbackKey = entryKey(DATA[index]);
+            
+            target = { id: originalId };
+            if (!originalId || originalId.trim() === '') {
+                target.fallbackKey = originalFallbackKey;
             }
         }
-        const msg = index === null ? 'Add entry' : `Edit entry id ${target?.id || 'unknown'}`;
+        
+        const msg = index === null ? 'Add entry' : `Edit entry id ${originalId || 'unknown'}`;
         
         // OPTIMISTIC UPDATE: Show changes immediately
         if (index === null) {
-            // Add - create new item and add to DATA
             const newItem = { ...out };
             ensurePersistentId(newItem);
             DATA.push(newItem);
         } else {
-            // Edit - update existing item
-            const existingId = DATA[index].id;
-            DATA[index] = { ...DATA[index], ...out, id: existingId };
+            DATA[index] = { ...DATA[index], ...out, id: originalId };
         }
         
         // Re-sort and update UI immediately
@@ -1353,11 +1357,13 @@ async function confirmDeleteById(id) {
     }
     
     const deletedItem = { ...DATA[itemIndex] };
+    const originalId = deletedItem.id;
     
-    if (!deletedItem.id) {
+    if (!originalId || originalId.trim() === '') {
         alert('Item has no ID. This should not happen. Please refresh the page.');
         return;
     }
+    
     const title = deletedItem?.song_title_romaji || deletedItem?.song_title_original || '(untitled)';
     const anime = deletedItem?.anime_en || deletedItem?.anime_romaji || '(unknown)';
     
@@ -1372,14 +1378,14 @@ async function confirmDeleteById(id) {
     document.querySelectorAll('[data-delete-id]').forEach(b => b.disabled = true);
 
     try {
-        const msg = `Delete entry id ${id}`;
+        const msg = `Delete entry id ${originalId}`;
         
-        DATA = DATA.filter(item => item.id !== id);
+        DATA = DATA.filter(item => item.id !== originalId);
         DATA.sort(compareItems);
         DATA = DATA.map((item, i) => ({ ...item, _index: i }));
         applyFilters({ resetPage: false });
 
-        await commitJsonWithRefresh(null, { id }, msg, deletedItem);
+        await commitJsonWithRefresh(null, { id: originalId }, msg, deletedItem);
         
         await reloadLatestContent();
 
