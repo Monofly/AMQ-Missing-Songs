@@ -887,10 +887,22 @@ async function commitJsonWithRefresh(changeObj, index, commitMessage) {
 }
 
 // After a successful commit, refresh DATA locally without losing filters or page
-async function afterCommitUpdateLocal(payloadArray, newSha) {
-    // Rebuild DATA once, then sort, then re-index once
-    DATA = payloadArray.slice();
-    DATA_SHA = newSha || DATA_SHA; // Update to the new SHA
+async function afterCommitUpdateLocal(_payloadArray, newSha) {
+    // Always refresh from server so UI reflects the repo's latest state.
+    const res = await fetch(api('/content'), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'include',
+        cache: 'no-store'
+    });
+    if (!res.ok) throw new Error(`Post-save refresh failed ${res.status}`);
+
+    const fresh = await res.json();
+    const latestArray = Array.isArray(fresh.content) ? fresh.content : [];
+    DATA_SHA = fresh.sha || newSha || DATA_SHA;
+
+    // Rebuild DATA once, sort, and re-index once
+    DATA = latestArray.map((x, i) => ({ ...x, _index: i }));
     DATA.sort(compareItems);
     DATA = DATA.map((item, i) => ({ ...item, _index: i }));
 

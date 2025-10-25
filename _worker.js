@@ -530,29 +530,40 @@ export default {
                 `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}?ref=${BRANCH}`,
                 { headers }
             ).then(r => r.json());
-            // Concurrency guard: reject if client baseSha is provided and doesn't match current
-            if (baseSha && meta.sha && baseSha !== meta.sha) {
-                return json({ error: 'out_of_date', currentSha: meta.sha }, 409, cors);
-            }
 
             const payloadStr = JSON.stringify(content, null, 2) + '\n';
             if (payloadStr.length > 500_000) {
                 return json({ error: 'Payload too large' }, 413, cors);
             }
 
-            const update = await ghFetch(
-                `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}`,
-                {
-                    method: 'PUT',
-                    headers,
-                    body: JSON.stringify({
-                        message,
-                        content: b64EncodeUnicode(payloadStr),
-                        sha: meta.sha,
-                        branch: BRANCH
-                    })
-                }
-            ).then(r => r.json());
+            // Try to update once, and if GitHub signals a conflict, refetch meta and retry once.
+            async function tryUpdateWithMeta(currentMeta) {
+                return await ghFetch(
+                    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}`,
+                    {
+                        method: 'PUT',
+                        headers,
+                        body: JSON.stringify({
+                            message,
+                            content: b64EncodeUnicode(payloadStr),
+                            sha: currentMeta.sha,
+                            branch: BRANCH
+                        })
+                    }
+                ).then(r => r.json());
+            }
+
+            let update;
+            try {
+                update = await tryUpdateWithMeta(meta);
+            } catch (e) {
+                // If the first PUT throws due to GitHub rejecting the sha, refetch meta and retry once.
+                const meta2 = await ghFetch(
+                    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${CONTENT_PATH}?ref=${BRANCH}`,
+                    { headers }
+                ).then(r => r.json());
+                update = await tryUpdateWithMeta(meta2);
+            }
 
             // Purge CDN cache for /content so changes show immediately
             try {
