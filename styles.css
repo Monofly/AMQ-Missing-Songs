@@ -9,465 +9,127 @@
     --warn: #fbbf24;
 }
 
-/* Hide elements the CSP-safe way */
-[hidden] {
-    display: none !important;
-}
+/* Toggle visibility via [hidden] to satisfy strict CSP */
+[hidden] { display: none !important; }
 
-* {
-    box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-body {
-    margin: 0;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-}
+/* App shell */
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Arial, sans-serif; background: var(--bg); color: var(--text); }
+header { padding: 24px 16px; border-bottom: 1px solid #1f2430; }
+h1 { margin: 0 0 8px; font-size: 22px; }
+.sub { color: var(--muted); font-size: 14px; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
-header {
-    padding: 24px 16px;
-    border-bottom: 1px solid #1f2430;
-}
+/* Toolbar + filters */
+.filters { display: grid; grid-template-columns: 1fr repeat(4, minmax(140px, 220px)); gap: 12px; }
+input[type="search"], select { width: 100%; padding: 10px 12px; border: 1px solid #263047; border-radius: 8px; background: #0c0f17; color: var(--text); }
+input::placeholder { color: #72809a; }
 
-h1 {
-    margin: 0 0 8px;
-    font-size: 22px;
-}
+/* Count + admin bar + (top) pager layout */
+.count { margin: 8px 0 16px; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; justify-content: initial; }
+.count-left { flex: 0 1 auto; }
+.count-middle { flex: 0 0 auto; display: flex; justify-content: center; margin: 0 auto; }
+.count-right { flex: 0 0 auto; margin-left: auto; }
 
-.sub {
-    color: var(--muted);
-    font-size: 14px;
-}
+/* Results table */
+.table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; border-bottom: 1px solid #1f2430; vertical-align: top; }
+/* Make head stick below toolbar height computed by JS */
+th { position: sticky; top: var(--toolbar-height, 0px); background: var(--card); text-align: left; font-weight: 600; color: var(--muted); z-index: 10; }
 
-.wrap {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 16px;
-}
+tbody tr:hover { background: #111622; }
 
-.filters {
-    display: grid;
-    grid-template-columns: 1fr repeat(4, minmax(140px, 220px));
-    gap: 12px;
-}
+/* Small UI chips */
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
+.type { background: #1b2a3f; color: #9fd1ff; }
+.bad { background: #3a1b1b; color: #ffb4b4; }
+.ok { background: #163121; color: #b7f0c9; }
+.warn { background: #3a2c14; color: #ffe2a7; }
 
-input[type="search"],
-select {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid #263047;
-    border-radius: 8px;
-    background: #0c0f17;
-    color: var(--text);
-}
+/* Text helpers */
+.muted { color: var(--muted); }
+.label { color: var(--muted); font-size: 12px; margin-right: 6px; }
+.link { color: var(--accent); text-decoration: none; }
+.link:hover { text-decoration: underline; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); }
+.two-line { line-height: 1.35; }
+.preline { white-space: pre-line; }
 
-input::placeholder {
-    color: #72809a;
-}
+/* Footer */
+footer { padding: 40px 16px; color: var(--muted); text-align: center; font-size: 13px; }
 
-/* Count row container */
-.count {
-    margin: 8px 0 16px;
-    color: var(--muted);
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    /* remove or override space-between to avoid odd spacing */
-    justify-content: initial;
-}
+/* Buttons and admin */
+.admin { display: flex; gap: 8px; align-items: center; }
+.btn { background: #1b2335; color: var(--text); border: 1px solid #2b3550; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.btn:hover { background: #1f2940; }
+.btn.danger { background: #3a1b1b; border-color: #612b2b; }
+.btn.secondary { background: #0c0f17; border-color: #263047; }
 
-/* Left text can expand if needed */
-.count-left {
-    flex: 0 1 auto;
-}
+/* Row-level actions are only visible in admin mode */
+.row-actions { margin-top: 6px; display: none; gap: 6px; }
+.admin-on .row-actions { display: inline-flex; }
 
-/* Center pager stays compact and centers itself between left/right */
-.count-middle {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: center;
-    margin: 0 auto;
-    /* centers the middle block */
-}
+/* Small notices */
+.notice { color: var(--muted); font-size: 12px; }
+.notice.ok { color: var(--ok); }
+.notice.tip { display: block; margin: 0 0 10px; }
+.retry-row { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.notice.error { color: var(--bad); }
+.notice.stale { color: var(--warn); }
+.form-draft-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
 
-/* Admin stays flush-right no matter what */
-.count-right {
-    flex: 0 0 auto;
-    margin-left: auto;
-    /* pushes it to the far right */
-}
+/* Modal shell */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { width: min(800px, 96vw); background: #0f1422; border: 1px solid #263047; border-radius: 10px; padding: 16px; max-height: 90vh; overflow: auto; }
+.modal h3 { margin: 0 0 12px; font-size: 18px; }
 
-.table {
-    width: 100%;
-    border-collapse: collapse;
-}
+/* Form layouts */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: 12px; color: var(--muted); }
+.field input, .field select, .field textarea { background: #0c0f17; color: var(--text); border: 1px solid #263047; border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.field textarea { min-height: 80px; }
 
-th,
-td {
-    padding: 10px 12px;
-    border-bottom: 1px solid #1f2430;
-    vertical-align: top;
-}
+/* Modal footer */
+.modal-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
+.modal-actions-buttons { display: flex; gap: 8px; }
 
-/* Table head sticks below the toolbar. This value is set by JS */
-th {
-    position: sticky;
-    top: var(--toolbar-height, 0px);
-    background: var(--card);
-    text-align: left;
-    font-weight: 600;
-    color: var(--muted);
-    z-index: 10;
-    /* stays under the toolbar */
-}
+/* Responsive stacks */
+@media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } .grid, .grid-3 { grid-template-columns: 1fr; } }
 
-tbody tr:hover {
-    background: #111622;
-}
+/* Sticky toolbar above table */
+.toolbar { position: sticky; top: 0; z-index: 100; background: var(--bg); padding: 12px 0; box-shadow: 0 2px 0 #1f2430; }
 
-.pill {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-size: 12px;
-    margin-right: 6px;
-}
+thead th { background-clip: padding-box; }
 
-.type {
-    background: #1b2a3f;
-    color: #9fd1ff;
-}
-
-.bad {
-    background: #3a1b1b;
-    color: #ffb4b4;
-}
-
-.ok {
-    background: #163121;
-    color: #b7f0c9;
-}
-
-.warn {
-    background: #3a2c14;
-    color: #ffe2a7;
-}
-
-.muted {
-    color: var(--muted);
-}
-
-.label {
-    color: var(--muted);
-    font-size: 12px;
-    margin-right: 6px;
-}
-
-.link {
-    color: var(--accent);
-    text-decoration: none;
-}
-
-.link:hover {
-    text-decoration: underline;
-}
-
-.mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    color: var(--muted);
-}
-
-.two-line {
-    line-height: 1.35;
-}
-
-.preline {
-    white-space: pre-line;
-}
-
-footer {
-    padding: 40px 16px;
-    color: var(--muted);
-    text-align: center;
-    font-size: 13px;
-}
-
-.admin {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.btn {
-    background: #1b2335;
-    color: var(--text);
-    border: 1px solid #2b3550;
-    padding: 8px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-.btn:hover {
-    background: #1f2940;
-}
-
-.btn.danger {
-    background: #3a1b1b;
-    border-color: #612b2b;
-}
-
-.btn.secondary {
-    background: #0c0f17;
-    border-color: #263047;
-}
-
-.row-actions {
-    margin-top: 6px;
-    display: none;
-    gap: 6px;
-}
-
-.admin-on .row-actions {
-    display: inline-flex;
-}
-
-.notice {
-    color: var(--muted);
-    font-size: 12px;
-}
-
-.notice.ok {
-    color: var(--ok);
-}
-
-.notice.tip {
-    display: block;
-    margin: 0 0 10px;
-    /* matches .grid / .grid-3 gap = 10px */
-}
-
-.retry-row {
-    margin-top: 10px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.notice.error {
-    color: var(--bad);
-}
-
-.notice.stale {
-    color: var(--warn);
-}
-
-.form-draft-note {
-    color: var(--muted);
-    font-size: 12px;
-    margin: 8px 0 0;
-}
-
-/* Modal */
-.modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    /* IMPORTANT: allow it to be visible when not [hidden] */
-    display: flex;
-    /* this is the default visible state */
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal {
-    width: min(800px, 96vw);
-    background: #0f1422;
-    border: 1px solid #263047;
-    border-radius: 10px;
-    padding: 16px;
-    max-height: 90vh;
-    overflow: auto;
-}
-
-.modal h3 {
-    margin: 0 0 12px;
-    font-size: 18px;
-}
-
-.grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-}
-
-.grid-3 {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-}
-
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.field label {
-    font-size: 12px;
-    color: var(--muted);
-}
-
-.field input,
-.field select,
-.field textarea {
-    background: #0c0f17;
-    color: var(--text);
-    border: 1px solid #263047;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 14px;
-}
-
-.field textarea {
-    min-height: 80px;
-}
-
-.modal-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 12px;
-}
-
-.modal-actions-buttons {
-    display: flex;
-    gap: 8px;
-}
-
-@media (max-width: 900px) {
-    .filters {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .grid,
-    .grid-3 {
-        grid-template-columns: 1fr;
-    }
-}
-
-.toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    /* safely above table head */
-    background: var(--bg);
-    /* solid to avoid peek-through */
-    padding: 12px 0;
-    box-shadow: 0 2px 0 #1f2430;
-    /* subtle divider line */
-}
-
-thead th {
-    background-clip: padding-box;
-}
-
-/* Table column widths (moved from inline styles) */
+/* Fixed column widths for stable layout */
 th.col-anime { width: 28%; }
 th.col-song { width: 30%; }
 th.col-credits { width: 26%; }
 th.col-type { width: 8%; }
 th.col-links { width: 8%; }
 
-/* Stack fields vertically on the left of Status row */
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    /* same rhythm as your grid gaps */
-}
+/* Stack controls on left of status row */
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.field-notes textarea { min-height: 140px; line-height: 1.4; resize: vertical; }
+.field textarea:focus { outline: none; border-color: #2b3550; box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15); }
 
-/* Make Notes feel intentional and comfortable to type in */
-.field-notes textarea {
-    min-height: 140px;
-    /* taller by default */
-    line-height: 1.4;
-    resize: vertical;
-    /* let users expand if needed */
-}
+/* Utility for force-show */
+.is-open { display: flex !important; }
 
-/* Clearer focus ring for textareas */
-.field textarea:focus {
-    outline: none;
-    border-color: #2b3550;
-    box-shadow: 0 0 0 2px rgba(92, 200, 255, 0.15);
-}
+/* Pagers */
+.pager { display: flex; align-items: center; gap: 12px; padding: 12px 0 24px; flex-wrap: wrap; }
+.pager .page-control { display: inline-flex; align-items: center; gap: 6px; }
+.pager input[type="number"] { width: 70px; padding: 8px 10px; border: 1px solid #263047; border-radius: 8px; background: #0c0f17; color: var(--text); font-size: 14px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.is-open {
-    display: flex !important;
-}
+/* More compact for top pager */
+.pager.mini { padding: 0; }
+@media (max-width: 600px) { .pager.mini .page-control input[type="number"] { width: 56px; } }
 
-.pager {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 0 24px;
-    /* keep it visually consistent with toolbar/table spacing */
-    flex-wrap: wrap;
-}
-
-.pager .page-control {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.pager input[type="number"] {
-    width: 70px;
-    padding: 8px 10px;
-    border: 1px solid #263047;
-    border-radius: 8px;
-    background: #0c0f17;
-    color: var(--text);
-    font-size: 14px;
-}
-
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* Make the top pager more compact */
-.pager.mini {
-    padding: 0;
-}
-
-/* Optional: shrink the mini pager inputs a touch on small screens */
-@media (max-width: 600px) {
-    .pager.mini .page-control input[type="number"] {
-        width: 56px;
-    }
-}
-
-/* Saving indicator */
-.saving {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.saving::after {
-    content: "";
-    width: 12px;
-    height: 12px;
-    border: 2px solid #2b3550;
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
+/* Inline saving spinner */
+.saving { display: inline-flex; align-items: center; gap: 6px; }
+.saving::after { content: ""; width: 12px; height: 12px; border: 2px solid #2b3550; border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -9,6 +9,7 @@
 </head>
 
 <body>
+  <!-- Page header -->
   <header class="wrap">
     <h1>Missing Songs for AMQ</h1>
     <div class="sub">Find potentially legal songs for AMQ even if they have issues or not. Added songs to AMQ will be
@@ -16,8 +17,9 @@
   </header>
 
   <main class="wrap">
-    <!-- NEW: sticky toolbar wrapper -->
+    <!-- Sticky toolbar with filters, count, top pager, and admin actions -->
     <div id="toolbar" class="toolbar">
+      <!-- Search and filters -->
       <section class="filters">
         <input id="q" type="search" placeholder="Search anime, song, or credits…" />
         <select id="year"></select>
@@ -45,11 +47,13 @@
         </select>
       </section>
 
+      <!-- Count + compact pager + admin area -->
       <div class="count" id="count">
         <span class="count-left">
           <span id="countText">Loading…</span>
         </span>
 
+        <!-- Top compact pager (mirrors the bottom one) -->
         <div class="count-middle">
           <div class="pager mini" id="topPager" hidden>
             <button class="btn" id="topPrevPageBtn" disabled>Back</button>
@@ -61,6 +65,7 @@
           </div>
         </div>
 
+        <!-- Admin actions and save status -->
         <span class="admin count-right" id="adminBar">
           <span id="loginStatus" class="notice">Not signed in</span>
           <button class="btn" id="loginBtn">Login</button>
@@ -69,8 +74,9 @@
           <span class="notice" id="saveNotice" hidden></span>
         </span>
       </div>
-    </div> <!-- CLOSE .toolbar BEFORE THE TABLE -->
+    </div>
 
+    <!-- Results table -->
     <table class="table" aria-describedby="count">
       <thead>
         <tr>
@@ -84,6 +90,7 @@
       <tbody id="rows"></tbody>
     </table>
 
+    <!-- Bottom pager (full size) -->
     <div class="pager" id="pager" hidden>
       <button class="btn" id="prevPageBtn" disabled>Back</button>
       <div class="page-control">
@@ -99,11 +106,12 @@
     Discord: floth.
   </footer>
 
-  <!-- Modal -->
+  <!-- Add/Edit modal -->
   <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <h3 id="modalTitle">Add/Edit entry</h3>
       <form id="editForm">
+        <!-- Basic info -->
         <div class="grid">
           <div class="field"><label>Anime (English)</label><input name="anime_en" /></div>
           <div class="field"><label>Anime (Romaji)</label><input name="anime_romaji" /></div>
@@ -136,6 +144,7 @@
           <div class="field"><label>End time</label><input name="time_end" /></div>
         </div>
 
+        <!-- Song and people -->
         <h4>Song & credits</h4>
         <div class="grid">
           <div class="field"><label>Song title (Romaji)</label><input name="song_title_romaji" /></div>
@@ -156,9 +165,10 @@
           <div class="field"><label>Arranger (Original)</label><input name="arranger_original" /></div>
           <div class="field"><label>—</label><span class="notice">Leave blank if unknown</span></div>
         </div>
+
+        <!-- Status and notes -->
         <h4>Status</h4>
         <div class="grid status-two-col">
-          <!-- Left column: stack Clean + Issues -->
           <div class="stack">
             <div class="field">
               <label>Clean available?</label>
@@ -173,13 +183,13 @@
             </div>
           </div>
 
-          <!-- Right column: Notes -->
           <div class="field field-notes">
             <label>Notes</label>
             <textarea name="notes" placeholder="Context, scene, etc."></textarea>
           </div>
         </div>
 
+        <!-- Actions -->
         <div class="modal-actions">
           <div class="notice" id="modalNotice"></div>
           <div class="modal-actions-buttons">
