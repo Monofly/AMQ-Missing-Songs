@@ -407,10 +407,37 @@ export default {
             const token = getCookie(req, '__Host-gh_at');
             if (!token) return json({ loggedIn: false }, 200, cors, { 'Cache-Control': 'no-store' });
             const headers = { 'Accept': 'application/vnd.github+json', 'Authorization': `Bearer ${token}` };
-            const user = await ghFetch('https://api.github.com/user', { headers }).then(r => r.json());
-            const repo = await ghFetch(`https://api.github.com/repos/${OWNER}/${REPO}`, { headers }).then(r => r.json());
-            const canPush = !!(repo?.permissions?.push);
+            
+            // Fetch user info
+            let user;
+            try {
+                user = await ghFetch('https://api.github.com/user', { headers }).then(r => r.json());
+            } catch (e) {
+                // Token might be invalid/expired
+                return json({ loggedIn: false }, 200, cors, { 'Cache-Control': 'no-store' });
+            }
+            
+            // Check if user is the repo owner (case-insensitive)
             const isOwner = user?.login && user.login.toLowerCase() === OWNER.toLowerCase();
+            
+            // Try to fetch repo permissions - this may fail for private repos if user lacks access
+            let canPush = false;
+            try {
+                const repoRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}`, {
+                    headers: new Headers({
+                        'Accept': 'application/vnd.github+json',
+                        'Authorization': `Bearer ${token}`,
+                        'User-Agent': 'monofly-anime-songs-worker'
+                    })
+                });
+                if (repoRes.ok) {
+                    const repo = await repoRes.json();
+                    canPush = !!(repo?.permissions?.push);
+                }
+            } catch {
+                // Repo fetch failed - permissions remain false unless user is owner
+            }
+            
             return json({ loggedIn: true, user, canPush: canPush || isOwner }, 200, cors, { 'Cache-Control': 'no-store' });
         }
 

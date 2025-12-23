@@ -466,7 +466,7 @@ async function requireFreshAndAdmin({maxRetries=1}={}){
 
 // GitHub device flow login (poll loop)
 async function loginWithGitHub(){
-    const start=await fetch(api('/oauth/device-code'),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},credentials:'include',body:JSON.stringify({client_id:CONFIG.CLIENT_ID,scope:'public_repo'})}).then(r=>r.json()).catch(()=>null);
+    const start=await fetch(api('/oauth/device-code'),{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},credentials:'include',body:JSON.stringify({client_id:CONFIG.CLIENT_ID,scope:'repo'})}).then(r=>r.json()).catch(()=>null);
     if(!start||!start.device_code){ alert('GitHub login failed to start.'); return; }
     const {device_code,user_code,verification_uri,expires_in,interval}=start;
     const msg=`1) Visit: ${verification_uri}\n2) Enter code: ${user_code}\n\nLeave this tab open.`;
