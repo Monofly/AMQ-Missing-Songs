@@ -540,23 +540,59 @@ function buildPresetFromShow(it){ return {anime_en:it.anime_en||'',anime_romaji:
 
 // Open editor (new or edit existing); loads draft if present
 async function openEditor(index,preset){
-    await restoreSession(); const freshCheck=await isFreshAgainstRemoteSha(); if(!freshCheck.ok){ if(confirm('Data is outdated. Refresh now?')) location.href=location.origin+'/?r='+Date.now(); return; }
-    if(!isAdmin){ alert('Not signed in with write access.'); return; }
-    if(index!==null && (!DATA[index]||!DATA[index].id||!DATA[index].id.trim())){ alert('This item has no ID. Refresh to fix.'); return; }
-    els.modalNotice.textContent=''; const isNew=(index===null||index===undefined); const indexOrNew=isNew?null:index; els.modalTitle.textContent=isNew?'Add entry':'Edit entry';
-    const draft=loadDraft(indexOrNew);
-    if(draft) fillForm({...draft,_index:isNew?'':index});
-    else if(!isNew) fillForm(DATA[index]);
-    else fillForm({season:'Winter',type:'OP',clean_available:false,issues:[],...(preset||{})});
-    els.modalBackdrop.hidden=false; els.modalBackdrop.setAttribute('aria-hidden','false');
-    setTimeout(()=>{ const first=els.editForm.querySelector('input,select,textarea'); if(first) first.focus(); },100);
-    const f=els.editForm; const onChange=()=>saveDraft(indexOrNew); const clearError=()=>{ els.modalNotice.textContent=''; els.modalNotice.classList.remove('error'); };
+    await restoreSession();
+    const freshCheck=await isFreshAgainstRemoteSha();
+    if(!freshCheck.ok){
+        if(confirm('Data is outdated. Refresh now?')) location.href=location.origin+'/?r='+Date.now();
+        return;
+    }
+    if(!isAdmin){
+        alert('Not signed in with write access.');
+        return;
+    }
+    if(index!==null && (!DATA[index]||!DATA[index].id||!DATA[index].id.trim())){
+        alert('This item has no ID. Refresh to fix.');
+        return;
+    }
+    els.modalNotice.textContent='';
+    const isNew=(index===null||index===undefined);
+    const indexOrNew=isNew?null:index;
+    els.modalTitle.textContent=isNew?'Add entry':'Edit entry';
+    // Always clear form and draft for new entry
+    if(isNew){
+        els.editForm.reset();
+        clearDraft(null);
+        fillForm({season:'Winter',type:'OP',clean_available:false,issues:[],...(preset||{})});
+    }else{
+        const draft=loadDraft(indexOrNew);
+        if(draft) fillForm({...draft,_index:index});
+        else fillForm(DATA[index]);
+    }
+    els.modalBackdrop.hidden=false;
+    els.modalBackdrop.setAttribute('aria-hidden','false');
+    setTimeout(()=>{
+        const first=els.editForm.querySelector('input,select,textarea');
+        if(first) first.focus();
+    },100);
+    const f=els.editForm;
+    const onChange=()=>saveDraft(indexOrNew);
+    const clearError=()=>{ els.modalNotice.textContent=''; els.modalNotice.classList.remove('error'); };
     Array.from(f.elements).forEach(el=>{ if(el.name) el.addEventListener('input',clearError,{passive:true}); });
     Array.from(f.elements).forEach(el=>{ if(el.name){ el.addEventListener('input',onChange,{passive:true}); el.addEventListener('change',onChange,{passive:true}); } });
 }
 
 // Close editor & clear draft
-function closeEditor(){ els.modalBackdrop.hidden=true; els.modalBackdrop.setAttribute('aria-hidden','true'); const idxStr=els.editForm.elements._index.value; const indexOrNew=idxStr===''?null:Number(idxStr); clearDraft(indexOrNew); els.editForm.reset(); (isAdmin&&els.addBtn?els.addBtn:els.q).focus(); }
+function closeEditor(){
+    els.modalBackdrop.hidden=true;
+    els.modalBackdrop.setAttribute('aria-hidden','true');
+    // Always clear both possible drafts and reset form
+    clearDraft(null);
+    const idxStr=els.editForm.elements._index.value;
+    const indexOrNew=idxStr===''?null:Number(idxStr);
+    if(indexOrNew!==null) clearDraft(indexOrNew);
+    els.editForm.reset();
+    (isAdmin&&els.addBtn?els.addBtn:els.q).focus();
+}
 
 // Populate form fields from item/draft
 function fillForm(it){ const f=els.editForm; f.elements.anime_en.value=it.anime_en||''; f.elements.anime_romaji.value=it.anime_romaji||''; f.elements.year.value=it.year||''; f.elements.season.value=it.season||'Winter'; f.elements.type.value=it.type||'OP'; f.elements.episode.value=(it.episode??''); f.elements.time_start.value=it.time_start||''; f.elements.time_end.value=it.time_end||''; f.elements.song_title_romaji.value=it.song_title_romaji||''; f.elements.song_title_original.value=it.song_title_original||''; f.elements.artist_romaji.value=it.artist_romaji||''; f.elements.artist_original.value=it.artist_original||''; f.elements.composer_romaji.value=it.composer_romaji||''; f.elements.composer_original.value=it.composer_original||''; f.elements.arranger_romaji.value=it.arranger_romaji||''; f.elements.arranger_original.value=it.arranger_original||''; f.elements.clean_available.value=String(!(it.clean_available===false)); f.elements.ann_url.value=it.ann_url||''; f.elements.mal_url.value=it.mal_url||''; f.elements.issues.value=Array.isArray(it.issues)?it.issues.join(', '):''; f.elements.notes.value=it.notes||''; f.elements._index.value=(it._index??''); }
